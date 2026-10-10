@@ -1,0 +1,28 @@
+{
+  "name": "nepali-tales-api",
+  "version": "1.0.0",
+  "description": "Nepali Tales Admin API — Hono on Cloudflare Workers",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "seed": "npx tsx scripts/seed.ts",
+    "seed:faqs": "tsx scripts/seed-faqs.ts",
+    "typecheck": "tsc --noEmit",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@sentry/cloudflare": "^11.6.0",
+    "hono": "^4.7.11",
+    "mongodb": "^6.16.0",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261001.1",
+    "@types/node": "^22.15.33",
+    "tsx": "^4.23.15",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.18.0"
+  }
+}
