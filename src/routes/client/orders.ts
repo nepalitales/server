@@ -132,17 +132,29 @@ clientOrderRoutes.post("/", async (c) => {
           return c.json({ success: false, message: "Selected address not found" }, 404);
         }
       } else if (parsed.data.address) {
+        const flatNumber = parsed.data.address.flatNumber || parsed.data.address.apartment || "";
+        const wing = parsed.data.address.wing || "";
+        const addressLine1 = parsed.data.address.addressLine1 || parsed.data.address.building || "";
+        const addressLine2 = parsed.data.address.addressLine2 || parsed.data.address.street || "";
+        const landmark = parsed.data.address.landmark || "";
+        const city = parsed.data.address.city || "Mumbai";
+        const pincode = parsed.data.address.pincode || "";
+
         const newAddr: ClientAddressDoc = {
           id: generateId("addr"),
           userId,
           label: parsed.data.address.label || "Home",
-          street: parsed.data.address.street,
-          building: parsed.data.address.building,
+          flatNumber,
+          wing,
+          addressLine1,
+          addressLine2,
+          street: addressLine2 || addressLine1 || parsed.data.address.street || "",
+          building: addressLine1 || parsed.data.address.building || "",
+          apartment: flatNumber || parsed.data.address.apartment || "",
           floor: parsed.data.address.floor,
-          apartment: parsed.data.address.apartment,
-          landmark: parsed.data.address.landmark,
-          city: parsed.data.address.city || "Mumbai",
-          pincode: parsed.data.address.pincode,
+          landmark,
+          city,
+          pincode,
           latitude: parsed.data.address.latitude,
           longitude: parsed.data.address.longitude,
           isDefault: false,
@@ -352,6 +364,10 @@ clientOrderRoutes.post("/", async (c) => {
       deliveryAddress: {
         id: addressDoc.id,
         label: addressDoc.label,
+        flatNumber: addressDoc.flatNumber,
+        wing: addressDoc.wing,
+        addressLine1: addressDoc.addressLine1,
+        addressLine2: addressDoc.addressLine2,
         street: addressDoc.street,
         building: addressDoc.building,
         floor: addressDoc.floor,
@@ -402,6 +418,27 @@ clientOrderRoutes.post("/", async (c) => {
     };
 
     await ordersCol.insertOne(orderDoc as any);
+
+    // Keep user's profile synced in client_users
+    try {
+      const usersCol = db.collection<ClientUserDoc>(COLLECTIONS.CLIENT_USERS);
+      const currentUser = await usersCol.findOne({ id: userId });
+      if (currentUser) {
+        const updateFields: Record<string, unknown> = {};
+        if (!currentUser.username && parsed.data.customerName) {
+          updateFields.username = parsed.data.customerName.trim();
+        }
+        if (!currentUser.phone && parsed.data.contactPhone) {
+          updateFields.phone = parsed.data.contactPhone.trim();
+        }
+        if (Object.keys(updateFields).length > 0) {
+          updateFields.updatedAt = new Date();
+          await usersCol.updateOne({ id: userId }, { $set: updateFields });
+        }
+      }
+    } catch (e) {
+      console.warn("[Orders] Non-fatal user profile sync error:", e);
+    }
 
     return c.json(
       {
