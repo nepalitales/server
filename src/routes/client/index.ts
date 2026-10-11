@@ -7,6 +7,7 @@ import { getAvailableDispatchSlots } from "../../lib/dispatch-windows";
 import { clientAuthRoutes } from "./auth";
 import { clientAddressRoutes } from "./address";
 import { clientOrderRoutes } from "./orders";
+import { testPaymentRoutes } from "./test-payment";
 import {
   getCachedAddons,
   matchEdgeAddonsCache,
@@ -33,6 +34,9 @@ clientRoutes.route("/addresses", clientAddressRoutes);
 
 // ─── Customer Orders (Razorpay & Borzo Integrated) ───────────────
 clientRoutes.route("/orders", clientOrderRoutes);
+
+// ─── Live Payment & Refund Test Suite (Standalone) ──────────────
+clientRoutes.route("/test-payment", testPaymentRoutes);
 
 // ─── Products ────────────────────────────────────────────────────
 

@@ -77,6 +77,14 @@ app.use(
 
       if (ALLOWED_ORIGINS.has(origin)) return origin;
 
+      if (
+        origin === "null" ||
+        origin.startsWith("http://localhost:") ||
+        origin.startsWith("http://127.0.0.1:")
+      ) {
+        return origin;
+      }
+
       return "";
     },
     credentials: true,
@@ -137,6 +145,9 @@ app.route("/api/client", clientRoutes);
 
 // --- Webhooks ---
 app.route("/api/webhooks/razorpay", razorpayWebhookRoutes);
+
+// --- Standalone Test Checkout UI Shortcut ---
+app.get("/test-checkout", (c) => c.redirect("/api/client/test-payment/page"));
 
 // --- 404 Fallback ---
 
