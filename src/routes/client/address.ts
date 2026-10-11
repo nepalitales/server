@@ -21,29 +21,24 @@ clientAddressRoutes.use("*", clientAuthMiddleware);
  * - `latitude` / `longitude`: Optional coordinates for pin-point courier accuracy.
  */
 export function formatBorzoAddress(
-  addr: Pick<
-    ClientAddressDoc,
-    | "street"
-    | "building"
-    | "floor"
-    | "apartment"
-    | "landmark"
-    | "city"
-    | "pincode"
-    | "latitude"
-    | "longitude"
-  >,
+  addr: Partial<ClientAddressDoc>,
 ): BorzoAddressFormat {
   const addressParts: string[] = [];
-  if (addr.building) addressParts.push(addr.building.trim());
-  if (addr.street) addressParts.push(addr.street.trim());
+  if (addr.flatNumber) addressParts.push(`Flat ${addr.flatNumber.trim()}`);
+  if (addr.wing) addressParts.push(`Wing ${addr.wing.trim()}`);
+  const bldg = addr.addressLine1 || addr.building;
+  if (bldg) addressParts.push(bldg.trim());
+  const loc = addr.addressLine2 || addr.street;
+  if (loc) addressParts.push(loc.trim());
   if (addr.city) addressParts.push(addr.city.trim());
   if (addr.pincode) addressParts.push(addr.pincode.trim());
 
   const address = addressParts.join(", ");
 
   const noteParts: string[] = [];
-  if (addr.apartment) noteParts.push(`Flat/Apt: ${addr.apartment.trim()}`);
+  const flat = addr.flatNumber || addr.apartment;
+  if (flat) noteParts.push(`Flat: ${flat.trim()}`);
+  if (addr.wing) noteParts.push(`Wing: ${addr.wing.trim()}`);
   if (addr.floor) noteParts.push(`Floor: ${addr.floor.trim()}`);
   if (addr.landmark) noteParts.push(`Landmark: ${addr.landmark.trim()}`);
 
@@ -136,17 +131,29 @@ clientAddressRoutes.post("/", async (c) => {
       await collection.updateMany({ userId }, { $set: { isDefault: false } });
     }
 
+    const flatNumber = parsed.data.flatNumber || parsed.data.apartment || "";
+    const wing = parsed.data.wing || "";
+    const addressLine1 = parsed.data.addressLine1 || parsed.data.building || "";
+    const addressLine2 = parsed.data.addressLine2 || parsed.data.street || "";
+    const landmark = parsed.data.landmark || "";
+    const city = parsed.data.city || "Mumbai";
+    const pincode = parsed.data.pincode || "";
+
     const newAddress: ClientAddressDoc = {
       id: generateId("addr"),
       userId,
       label: parsed.data.label || "Home",
-      street: parsed.data.street,
-      building: parsed.data.building,
+      flatNumber,
+      wing,
+      addressLine1,
+      addressLine2,
+      street: addressLine2 || addressLine1 || parsed.data.street || "",
+      building: addressLine1 || parsed.data.building || "",
+      apartment: flatNumber || parsed.data.apartment || "",
       floor: parsed.data.floor,
-      apartment: parsed.data.apartment,
-      landmark: parsed.data.landmark,
-      city: parsed.data.city || "Mumbai",
-      pincode: parsed.data.pincode,
+      landmark,
+      city,
+      pincode,
       latitude: parsed.data.latitude,
       longitude: parsed.data.longitude,
       isDefault: shouldBeDefault,
@@ -246,6 +253,15 @@ clientAddressRoutes.patch("/:addressId", async (c) => {
       ...parsed.data,
       updatedAt: new Date(),
     };
+    if (parsed.data.flatNumber && !parsed.data.apartment) {
+      updateFields.apartment = parsed.data.flatNumber;
+    }
+    if (parsed.data.addressLine1 && !parsed.data.building) {
+      updateFields.building = parsed.data.addressLine1;
+    }
+    if (parsed.data.addressLine2 && !parsed.data.street) {
+      updateFields.street = parsed.data.addressLine2;
+    }
 
     await collection.updateOne({ id: addressId, userId }, { $set: updateFields });
 
