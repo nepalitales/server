@@ -283,8 +283,14 @@ clientRoutes.get("/holidays", async (c) => {
     const db = c.get("db");
     const holidays = db.collection<HolidayDoc>(COLLECTIONS.HOLIDAYS);
 
-    // Only return today onwards
-    const today = new Date().toISOString().slice(0, 10);
+    // Only return today onwards in IST (Asia/Kolkata)
+    const now = new Date();
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
 
     const result = await holidays
       .find(
@@ -294,7 +300,7 @@ clientRoutes.get("/holidays", async (c) => {
       .sort({ date: 1 })
       .toArray();
 
-    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
     return c.json({ success: true, holidays: result });
   } catch (error) {
     console.error("Client get holidays error:", error);
