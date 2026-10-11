@@ -330,18 +330,45 @@ export const createAddressSchema = z.object({
     .default("Home"),
 
   /**
+   * Specific delivery address components (Zomato / Blinkit / Swiggy standard)
+   */
+  flatNumber: z
+    .string()
+    .max(60, "Flat / House number must be 60 characters or less")
+    .trim()
+    .optional(),
+
+  wing: z
+    .string()
+    .max(50, "Wing / Tower must be 50 characters or less")
+    .trim()
+    .optional(),
+
+  addressLine1: z
+    .string()
+    .max(300, "Address line 1 must be 300 characters or less")
+    .trim()
+    .optional(),
+
+  addressLine2: z
+    .string()
+    .max(300, "Address line 2 must be 300 characters or less")
+    .trim()
+    .optional(),
+
+  /**
    * Main street / road / locality name.
-   * Required for Borzo geocoding.
+   * Required for Borzo geocoding (can be mapped from addressLine1/addressLine2).
    */
   street: z
     .string()
-    .min(3, "Street / locality name is required (at least 3 characters)")
     .max(350, "Street address must be 350 characters or less")
-    .trim(),
+    .trim()
+    .optional(),
 
   building: z
     .string()
-    .max(100, "Building / society name must be 100 characters or less")
+    .max(150, "Building / society name must be 150 characters or less")
     .trim()
     .optional(),
 
@@ -353,7 +380,7 @@ export const createAddressSchema = z.object({
 
   apartment: z
     .string()
-    .max(50, "Apartment / flat number must be 50 characters or less")
+    .max(60, "Apartment / flat number must be 60 characters or less")
     .trim()
     .optional(),
 
@@ -367,7 +394,8 @@ export const createAddressSchema = z.object({
     .string()
     .max(100, "City must be 100 characters or less")
     .trim()
-    .optional(),
+    .optional()
+    .default("Mumbai"),
 
   pincode: z
     .string()
