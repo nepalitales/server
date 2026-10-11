@@ -183,6 +183,10 @@ export interface ClientAddressDoc {
   id: string; // "addr_<id>"
   userId: string; // references ClientUserDoc.id
   label: string; // "Home" | "Work" | "Other"
+  flatNumber?: string; // Flat / House / Door number
+  wing?: string; // Wing / Tower / Block
+  addressLine1?: string; // Building / society name
+  addressLine2?: string; // Area / Locality / Sector
   street: string; // Main road, area, street name
   building?: string; // Building / house name or number
   floor?: string; // Floor number
@@ -282,6 +286,10 @@ export interface OrderDoc {
   deliveryAddress: {
     id?: string;
     label?: string;
+    flatNumber?: string;
+    wing?: string;
+    addressLine1?: string;
+    addressLine2?: string;
     street: string;
     building?: string;
     floor?: string;
