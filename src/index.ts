@@ -57,31 +57,25 @@ app.use("*", timing());
 // Request logging
 app.use("*", logger());
 
-// Local development / private IP regex (localhost, 127.0.0.1, 192.168.*, 10.*, 172.16-31.*)
-const LOCAL_DEV_ORIGIN_REGEX =
-  /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
+// Strict allowlist of origins permitted to make cross-origin requests
+const ALLOWED_ORIGINS = new Set([
+  "https://nepalitales.com",
+  "https://www.nepalitales.com",
+  "https://admin.nepalitales.com",
+  "http://localhost:3000",
+  "http://localhost:3001",
+]);
 
-// Allowed production/staging/preview domains
-const ALLOWED_DOMAIN_REGEX =
-  /^https:\/\/([a-z0-9-]+\.)*(nepalitales\.com|vercel\.app)$/;
-
-// CORS -- allow client & admin origins (production, previews, and local dev)
+// CORS -- allow only explicit production domains and local dev ports
 app.use(
   "*",
   cors({
-    origin: (origin, c) => {
-      // No origin header = direct API call (curl, server-to-server, mobile apps) - allow
-      if (!origin) return "*";
-      const allowed = c.env.CORS_ORIGIN || "";
-      if (allowed === "*") return origin;
-      const allowedList = allowed.split(",").map((o: string) => o.trim());
-      if (allowedList.includes(origin)) return origin;
+    origin: (origin, _c) => {
+      // No origin header = direct API call (curl, server-to-server, mobile apps)
+      // Return null to block browser requests without an Origin header
+      if (!origin) return "https://nepalitales.com";
 
-      // Allow local development (localhost, 127.0.0.1, LAN IPs like 192.168.x.x)
-      if (LOCAL_DEV_ORIGIN_REGEX.test(origin)) return origin;
-
-      // Allow official Nepali Tales subdomains and Vercel preview environments
-      if (ALLOWED_DOMAIN_REGEX.test(origin)) return origin;
+      if (ALLOWED_ORIGINS.has(origin)) return origin;
 
       return "";
     },

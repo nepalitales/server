@@ -44,9 +44,6 @@ export const envSchema = z.object({
   BORZO_SERVICE_URL: z.string().url().default("http://127.0.0.1:8788"),
   BORZO_SERVICE_KEY: z.string().default("dev-internal-key-change-me"),
 
-  CORS_ORIGIN: z
-    .string()
-    .default("*"),
 
   NODE_ENV: z
     .enum(["development", "production", "staging"])
