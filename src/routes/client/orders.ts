@@ -24,6 +24,8 @@ import {
   confirmSlotReservation,
   releaseSlotReservation,
 } from "../../lib/dispatch-windows";
+import { getRedisClient } from "../../lib/redis";
+import { generateNextOrderNumber } from "../../lib/order-sequence";
 import type {
   OrderDoc,
   OrderItem,
@@ -300,8 +302,8 @@ clientOrderRoutes.post("/", async (c) => {
 
     // 5. Generate Order Number & Reserve Dispatch Slot Atomically
     const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
-    const count = await ordersCol.countDocuments({});
-    const orderNumber = `NT-${1001 + count}`;
+    const redis = getRedisClient(c.env);
+    const orderNumber = await generateNextOrderNumber(db, redis);
     const orderId = generateId("order");
 
     const targetDispatchDate =
@@ -508,6 +510,15 @@ clientOrderRoutes.post("/verify-payment", async (c) => {
     }
 
     if (order.status !== "pending_payment") {
+      // If Razorpay Webhook already confirmed payment, return idempotent success
+      if (order.status === "placed" && order.payment?.status === "paid") {
+        return c.json({
+          success: true,
+          message: "Payment already verified and confirmed.",
+          order,
+        });
+      }
+
       return c.json(
         {
           success: false,

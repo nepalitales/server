@@ -20,20 +20,25 @@ MONGODB_DB_NAME = "nepali-tales"
 KITCHEN_ADDRESS = "Metropolis Riveria, Kasarvadavali, Ghodbunder Road, Thane, Maharashtra 400615"
 KITCHEN_PHONE = "917678097659"
 
+# Upstash Redis Cache & Rate Limiting
+UPSTASH_REDIS_REST_URL = "https://electric-lamb-222305.upstash.io"
+
 # Production Secrets: Set via Cloudflare Dashboard or `npx wrangler secret put <NAME>`
 # 1. Database
 #    npx wrangler secret put MONGODB_URI
-# 2. Razorpay
+# 2. Upstash Redis Token
+#    npx wrangler secret put UPSTASH_REDIS_REST_TOKEN
+# 3. Razorpay
 #    npx wrangler secret put RAZORPAY_KEY_ID
 #    npx wrangler secret put RAZORPAY_KEY_SECRET
 #    npx wrangler secret put RAZORPAY_WEBHOOK_SECRET
-# 3. Borzo Porter Dispatch Service
+# 4. Borzo Porter Dispatch Service
 #    npx wrangler secret put BORZO_SERVICE_URL
 #    npx wrangler secret put BORZO_SERVICE_KEY
-# 4. Cloudinary (Food Menu Images)
+# 5. Cloudinary (Food Menu Images)
 #    npx wrangler secret put CLOUDINARY_CLOUD_NAME
 #    npx wrangler secret put CLOUDINARY_API_KEY
 #    npx wrangler secret put CLOUDINARY_API_SECRET
-# 5. Sentry (Error Tracking & Alerting)
+# 6. Sentry (Error Tracking & Alerting)
 #    npx wrangler secret put SENTRY_DSN
 

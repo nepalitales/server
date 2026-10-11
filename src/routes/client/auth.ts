@@ -21,12 +21,20 @@ import type {
   ClientSessionDoc,
   ClientOtpDoc,
 } from "../../types";
+import { getRedisClient, cacheDel, CACHE_KEYS } from "../../lib/redis";
+import { rateLimit } from "../../middleware/rate-limit";
 
 const clientAuthRoutes = new Hono<AppBindings>();
 
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const OTP_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds cooldown between resends
+
+// 4 requests per 15 minutes per IP/identifier globally enforced via Upstash Redis
+const otpRateLimit = rateLimit(4, 15 * 60 * 1000, {
+  prefix: "rl:client:otp",
+  errorMessage: "Too many OTP requests from your network. Please wait 15 minutes before trying again.",
+});
 
 // ─── 1. Send OTP (Email via Resend only) ──────────────────────────
 
@@ -201,8 +209,8 @@ async function handleSendOtp(c: Context<AppBindings>) {
   }
 }
 
-clientAuthRoutes.post("/send-otp", handleSendOtp);
-clientAuthRoutes.post("/signin", handleSendOtp);
+clientAuthRoutes.post("/send-otp", otpRateLimit, handleSendOtp);
+clientAuthRoutes.post("/signin", otpRateLimit, handleSendOtp);
 
 // ─── 2. Verify OTP & Authenticate / Register ────────────────────────
 
@@ -534,6 +542,11 @@ clientAuthRoutes.post("/logout", async (c) => {
       const db = c.get("db");
       const sessions = db.collection<ClientSessionDoc>(COLLECTIONS.CLIENT_SESSIONS);
       await sessions.deleteOne({ token });
+
+      const redis = getRedisClient(c.env);
+      if (redis) {
+        cacheDel(redis, `${CACHE_KEYS.CLIENT_SESSION_PREFIX}${token}`).catch(() => {});
+      }
     }
 
     deleteCookie(c, CLIENT_SESSION_COOKIE, { path: "/" });
@@ -560,6 +573,11 @@ clientAuthRoutes.post("/signout", async (c) => {
       const db = c.get("db");
       const sessions = db.collection<ClientSessionDoc>(COLLECTIONS.CLIENT_SESSIONS);
       await sessions.deleteOne({ token });
+
+      const redis = getRedisClient(c.env);
+      if (redis) {
+        cacheDel(redis, `${CACHE_KEYS.CLIENT_SESSION_PREFIX}${token}`).catch(() => {});
+      }
     }
 
     deleteCookie(c, CLIENT_SESSION_COOKIE, { path: "/" });

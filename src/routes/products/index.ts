@@ -161,7 +161,7 @@ productRoutes.post("/", async (c) => {
     };
 
     await products.insertOne(product);
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version on product creation:", e),
     );
 
@@ -296,7 +296,7 @@ productRoutes.patch("/:productId", async (c) => {
       }
     }
 
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version on product update:", e),
     );
 
@@ -351,7 +351,7 @@ productRoutes.delete("/:productId", async (c) => {
     }
 
     await products.deleteOne({ id: productId });
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version on product delete:", e),
     );
 

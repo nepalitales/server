@@ -69,7 +69,7 @@ adminOrderSettingsRoutes.put("/", async (c) => {
       { upsert: true },
     );
 
-    await bumpConfigVersion(db);
+    await bumpConfigVersion(db, c.env);
     const settings = await getOrderSettings(db);
 
     return c.json({

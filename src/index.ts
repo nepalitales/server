@@ -24,6 +24,7 @@ import { addonRoutes } from "./routes/addons";
 import { adminOrderSettingsRoutes } from "./routes/admin/order-settings";
 import { matchEdgeAddonsCache } from "./lib/addons-cache";
 import { getCachedConfigVersion } from "./lib/config-version";
+import { edgeCacheMiddleware } from "./middleware/edge-cache";
 
 const app = new Hono<AppBindings>();
 
@@ -126,6 +127,10 @@ app.use("/api/client/config-version", async (c, next) => {
   }
   await next();
 });
+
+// Global Upstash Redis Edge Cache for public customer routes
+// If cached, returns response immediately (< 15ms) without opening MongoDB TCP sockets
+app.use("/api/client/*", edgeCacheMiddleware);
 
 // Database connection -- opens per-request, closes in finally block
 app.use("/api/admin/*", dbMiddleware);

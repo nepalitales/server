@@ -79,7 +79,7 @@ holidayRoutes.post("/", async (c) => {
     await holidays.insertOne(holiday);
 
     // Notify SSE clients that config has changed
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version:", e),
     );
 
@@ -160,7 +160,7 @@ holidayRoutes.patch("/:holidayId", async (c) => {
     }
 
     // Notify SSE clients that config has changed
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version:", e),
     );
 
@@ -192,7 +192,7 @@ holidayRoutes.delete("/:holidayId", async (c) => {
     }
 
     // Notify SSE clients that config has changed
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version:", e),
     );
 

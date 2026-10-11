@@ -75,7 +75,7 @@ weeklyOffRoutes.put("/", async (c) => {
     );
 
     // Notify SSE clients that config has changed
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version:", e),
     );
 

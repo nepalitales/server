@@ -12,8 +12,11 @@ import type { AdminDoc, SessionDoc } from "../../types";
 const SESSION_COOKIE = "admin_session";
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
 
-// 5 login attempts per 15 minutes per IP
-const loginRateLimit = rateLimit(5, 15 * 60 * 1000);
+// 5 login attempts per 15 minutes per IP (globally enforced via Upstash Redis)
+const loginRateLimit = rateLimit(5, 15 * 60 * 1000, {
+  prefix: "rl:admin:login",
+  errorMessage: "Too many login attempts. Please wait 15 minutes before trying again.",
+});
 
 const authRoutes = new Hono<AppBindings>();
 

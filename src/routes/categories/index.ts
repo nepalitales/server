@@ -106,7 +106,7 @@ categoryRoutes.post("/", async (c) => {
     };
 
     await categories.insertOne(category);
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version on category creation:", e),
     );
 
@@ -199,7 +199,7 @@ categoryRoutes.patch("/:categoryId", async (c) => {
       );
     }
 
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version on category update:", e),
     );
 
@@ -243,7 +243,7 @@ categoryRoutes.delete("/:categoryId", async (c) => {
       return c.json({ success: false, message: "Category not found" }, 404);
     }
 
-    await bumpConfigVersion(db).catch((e) =>
+    await bumpConfigVersion(db, c.env).catch((e) =>
       console.error("Failed to bump config version on category delete:", e),
     );
 

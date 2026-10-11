@@ -13,6 +13,7 @@ import {
   reportsQuerySchema,
 } from "../../schemas";
 import { formatZodErrors } from "../../utils";
+import { getRedisClient, cacheGet, cacheSet, cacheDel, CACHE_KEYS } from "../../lib/redis";
 import type { Db } from "mongodb";
 import type { OrderDoc, OrderStatus } from "../../types";
 
@@ -87,9 +88,16 @@ adminOrderRoutes.get("/live-summary", async (c) => {
     const sinceParam = c.req.query("since");
     const sinceMs = sinceParam ? parseInt(sinceParam, 10) : 0;
 
-    // Single aggregation query for all status counts
-    const [statusAgg, recentEvents] = await Promise.all([
-      ordersCol
+    const redis = getRedisClient(c.env);
+    let counts: Record<string, number> | null = null;
+    if (redis) {
+      counts = await cacheGet<Record<string, number>>(redis, CACHE_KEYS.ADMIN_LIVE_SUMMARY);
+    }
+
+    const recentEventsPromise = sinceMs > 0 ? getOrderEventsSince(db, sinceMs) : Promise.resolve([]);
+
+    if (!counts) {
+      const statusAgg = await ordersCol
         .aggregate<{ _id: string; count: number }>([
           {
             $group: {
@@ -98,28 +106,33 @@ adminOrderRoutes.get("/live-summary", async (c) => {
             },
           },
         ])
-        .toArray(),
-      sinceMs > 0 ? getOrderEventsSince(db, sinceMs) : Promise.resolve([]),
-    ]);
+        .toArray();
 
-    const countMap: Record<string, number> = {};
-    for (const item of statusAgg) {
-      if (item._id) {
-        countMap[item._id] = item.count;
+      const countMap: Record<string, number> = {};
+      for (const item of statusAgg) {
+        if (item._id) {
+          countMap[item._id] = item.count;
+        }
+      }
+
+      counts = {
+        placed: countMap["placed"] || 0,
+        preparing: countMap["preparing"] || 0,
+        ready: countMap["ready"] || 0,
+        porterBooked:
+          (countMap["porter_booked"] || 0) + (countMap["out_for_delivery"] || 0),
+        delivered: countMap["delivered"] || 0,
+        cancelled:
+          (countMap["cancelled_by_customer"] || 0) +
+          (countMap["cancelled_by_admin"] || 0),
+      };
+
+      if (redis) {
+        cacheSet(redis, CACHE_KEYS.ADMIN_LIVE_SUMMARY, counts, 10).catch(() => {});
       }
     }
 
-    const counts = {
-      placed: countMap["placed"] || 0,
-      preparing: countMap["preparing"] || 0,
-      ready: countMap["ready"] || 0,
-      porterBooked:
-        (countMap["porter_booked"] || 0) + (countMap["out_for_delivery"] || 0),
-      delivered: countMap["delivered"] || 0,
-      cancelled:
-        (countMap["cancelled_by_customer"] || 0) +
-        (countMap["cancelled_by_admin"] || 0),
-    };
+    const recentEvents = await recentEventsPromise;
 
     c.header("Cache-Control", "private, no-cache, must-revalidate");
 
@@ -789,6 +802,11 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
         summary: { orderType },
       });
 
+      const redis = getRedisClient(c.env);
+      if (redis) {
+        cacheDel(redis, CACHE_KEYS.ADMIN_LIVE_SUMMARY).catch(() => {});
+      }
+
       return c.json({
         success: true,
         message: isPickup
@@ -837,6 +855,11 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
       orderNumber: order.orderNumber,
       status: targetStatus,
     });
+
+    const redis = getRedisClient(c.env);
+    if (redis) {
+      cacheDel(redis, CACHE_KEYS.ADMIN_LIVE_SUMMARY).catch(() => {});
+    }
 
     return c.json({
       success: true,
@@ -970,6 +993,11 @@ adminOrderRoutes.post("/:orderId/cancel", async (c) => {
         refundAmount: effectiveRefundAmount,
       },
     });
+
+    const redis = getRedisClient(c.env);
+    if (redis) {
+      cacheDel(redis, CACHE_KEYS.ADMIN_LIVE_SUMMARY).catch(() => {});
+    }
 
     return c.json({
       success: true,

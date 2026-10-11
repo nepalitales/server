@@ -307,7 +307,7 @@ export async function sendOrderConfirmationEmail(
           <tr>
             <td style="padding: 24px 32px 16px 32px;">
               <div style="background-color: #fefce8; border: 1px solid #fef08a; border-radius: 10px; padding: 14px 16px; margin-bottom: 24px; font-size: 13px; color: #854d0e;">
-                ℹ️ <strong>Cancellation Window:</strong> You can cancel this order with an instant refund before <strong>${formattedCancelTime}</strong>. Once our chefs begin cooking, orders cannot be cancelled.
+                <strong>Cancellation Window:</strong> You can cancel this order with an instant refund before <strong>${formattedCancelTime}</strong>. Once our chefs begin cooking, orders cannot be cancelled.
               </div>
 
               <!-- Order Items Table -->

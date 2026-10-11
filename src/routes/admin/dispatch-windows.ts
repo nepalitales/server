@@ -140,7 +140,7 @@ adminDispatchWindowRoutes.put("/bulk", async (c) => {
     }));
 
     await collection.bulkWrite(operations);
-    await bumpConfigVersion(db);
+    await bumpConfigVersion(db, c.env);
 
     return c.json({
       success: true,
@@ -216,7 +216,7 @@ adminDispatchWindowRoutes.put("/:day", async (c) => {
       { upsert: true },
     );
 
-    await bumpConfigVersion(db);
+    await bumpConfigVersion(db, c.env);
 
     return c.json({
       success: true,

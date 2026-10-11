@@ -22,6 +22,10 @@ export const envSchema = z.object({
   // Sentry Observability & Error Alerting
   SENTRY_DSN: z.string().url("SENTRY_DSN must be a valid Sentry URL").optional(),
 
+  // Upstash Redis & Rate Limiting
+  UPSTASH_REDIS_REST_URL: z.string().url("UPSTASH_REDIS_REST_URL must be a valid URL").optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
+
   // Razorpay Payment Gateway
   RAZORPAY_KEY_ID: z.string().min(1).optional(),
   RAZORPAY_KEY_SECRET: z.string().min(1).optional(),

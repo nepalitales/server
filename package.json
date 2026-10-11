@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@sentry/cloudflare": "^11.6.0",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.39.0",
     "hono": "^4.7.11",
     "mongodb": "^6.16.0",
     "zod": "^3.25.67"

@@ -118,7 +118,7 @@ addonRoutes.post("/", async (c) => {
 
     await addons.insertOne(addon);
     invalidateAddonsCache();
-    await bumpConfigVersion(db);
+    await bumpConfigVersion(db, c.env);
 
     return c.json(
       {
@@ -215,7 +215,7 @@ addonRoutes.patch("/:addonId", async (c) => {
     }
 
     invalidateAddonsCache();
-    await bumpConfigVersion(db);
+    await bumpConfigVersion(db, c.env);
 
     return c.json({
       success: true,
@@ -253,7 +253,7 @@ addonRoutes.delete("/:addonId", async (c) => {
 
     await addons.deleteOne({ id: addonId });
     invalidateAddonsCache();
-    await bumpConfigVersion(db);
+    await bumpConfigVersion(db, c.env);
 
     return c.json({
       success: true,

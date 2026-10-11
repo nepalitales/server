@@ -176,31 +176,69 @@ async function seed() {
 
     await db.collection("order_settings").createIndex({ docId: 1 }, { unique: true });
     await db.collection("orders").createIndex({ orderType: 1, status: 1 });
+    await db.collection("orders").createIndex({ userId: 1, createdAt: -1 });
+
+    // Client users & sessions
+    await db.collection("client_users").createIndex({ id: 1 }, { unique: true });
+    await db.collection("client_users").createIndex({ email: 1 }, { unique: true, sparse: true });
+    await db.collection("client_users").createIndex({ phone: 1 }, { sparse: true });
+    await db.collection("client_sessions").createIndex({ token: 1 }, { unique: true });
+    await db.collection("client_sessions").createIndex({ userId: 1 });
+    await db.collection("client_sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+    // Client OTPs & Addresses
+    await db.collection("client_otps").createIndex({ identifier: 1 });
+    await db.collection("client_otps").createIndex({ lastIp: 1, createdAt: 1 });
+    await db.collection("client_otps").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await db.collection("client_addresses").createIndex({ id: 1 }, { unique: true });
+    await db.collection("client_addresses").createIndex({ userId: 1 });
 
     console.log("  [OK] All indexes created\n");
 
     // ── 2. Seed admin ─────────────────────────────────────────
 
-    console.log("Seeding admin account...");
+    console.log("Seeding admin accounts...");
 
-    const adminEmail = "ankitbhavarthe123@gmail.com";
-    const existingAdmin = await db.collection("admins").findOne({ email: adminEmail });
-
-    if (existingAdmin) {
-      console.log("  [SKIP] Admin already exists, skipping\n");
-    } else {
-      const passwordHash = await hashPassword("2003@A");
-      await db.collection("admins").insertOne({
-        id: generateId("admin"),
+    const initialAdmins = [
+      {
         name: "Ankit Bhavarthe",
-        email: adminEmail,
+        email: "ankitbhavarthe123@gmail.com",
         phone: "9309348875",
-        passwordHash,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      console.log(`  [OK] Admin created: ${adminEmail}\n`);
+        password: "2003@A",
+      },
+      {
+        name: "Admin 1",
+        email: "nepalitalesadmin1@gmail.com",
+        phone: "7585080407",
+        password: "JuicyMomo@2026",
+      },
+      {
+        name: "Admin 2",
+        email: "nepalitalesadmin2@gmail.com",
+        phone: "7602277431",
+        password: "JuicyMomo@2026",
+      },
+    ];
+
+    for (const adm of initialAdmins) {
+      const existing = await db.collection("admins").findOne({ email: adm.email });
+      if (existing) {
+        console.log(`  [SKIP] Admin ${adm.email} already exists, skipping`);
+      } else {
+        const passwordHash = await hashPassword(adm.password);
+        await db.collection("admins").insertOne({
+          id: generateId("admin"),
+          name: adm.name,
+          email: adm.email,
+          phone: adm.phone,
+          passwordHash,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        console.log(`  [OK] Admin created: ${adm.email}`);
+      }
     }
+    console.log("");
 
     // ── 3. Seed categories ────────────────────────────────────
 

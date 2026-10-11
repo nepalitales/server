@@ -1,63 +1,109 @@
 import type { Context, Next } from "hono";
+import { Ratelimit } from "@upstash/ratelimit";
 import type { AppBindings } from "../config/app";
+import { getRedisClient } from "../lib/redis";
 
 /**
- * Simple sliding-window rate limiter for Cloudflare Workers.
+ * Resilient Multi-Tier Rate Limiter for Cloudflare Workers.
  *
- * Uses a module-scoped Map that persists within a single isolate.
- * This provides per-isolate protection - not globally perfect,
- * but a meaningful first line of defense against brute-force.
- *
- * For stronger guarantees, layer Cloudflare Rate Limiting Rules
- * on top via the dashboard (zero code, globally enforced).
+ * Tier 1 (Primary): Upstash Redis Global Sliding Window (works across all 300+ CF edge locations).
+ * Tier 2 (Fallback): In-memory Map sliding window (per-isolate defense if Redis is unavailable).
  */
 
-interface RateLimitEntry {
+interface LocalRateLimitEntry {
   timestamps: number[];
 }
 
-const store = new Map<string, RateLimitEntry>();
-
-// Periodically evict stale entries to prevent memory leaks
-const CLEANUP_INTERVAL_MS = 60_000; // 1 minute
+const localStore = new Map<string, LocalRateLimitEntry>();
+const CLEANUP_INTERVAL_MS = 60_000;
 let lastCleanup = Date.now();
 
-function cleanup(windowMs: number): void {
+function cleanupLocal(windowMs: number): void {
   const now = Date.now();
   if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
   lastCleanup = now;
 
-  for (const [key, entry] of store) {
+  for (const [key, entry] of localStore) {
     entry.timestamps = entry.timestamps.filter((t) => now - t < windowMs);
     if (entry.timestamps.length === 0) {
-      store.delete(key);
+      localStore.delete(key);
     }
   }
 }
 
-/**
- * Creates a rate-limiting middleware.
- *
- * @param maxRequests - Max requests allowed within the window
- * @param windowMs - Time window in milliseconds
- */
-export function rateLimit(maxRequests: number, windowMs: number) {
+export interface RateLimitOptions {
+  maxRequests: number;
+  windowMs: number;
+  prefix?: string;
+  errorMessage?: string;
+  identifier?: (c: Context<AppBindings>) => string | Promise<string>;
+}
+
+export function rateLimit(
+  maxRequests: number,
+  windowMs: number,
+  options: Partial<RateLimitOptions> = {},
+) {
+  const prefix = options.prefix || "rl:general";
+  const errorMessage =
+    options.errorMessage || "Too many requests. Please try again later.";
+  const windowSeconds = Math.ceil(windowMs / 1000);
+
   return async function rateLimitMiddleware(
     c: Context<AppBindings>,
     next: Next,
   ): Promise<Response | void> {
-    // Use CF-Connecting-IP (Cloudflare provides this), fall back to basic header
-    const ip =
+    const rawIp =
       c.req.header("cf-connecting-ip") ||
       c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
       "unknown";
 
+    const key = options.identifier ? await options.identifier(c) : rawIp;
+    const redis = getRedisClient(c.env);
+
+    // 1. Tier 1: Global Upstash Redis Rate Limiting
+    if (redis) {
+      try {
+        const ratelimit = new Ratelimit({
+          redis,
+          limiter: Ratelimit.slidingWindow(maxRequests, `${windowSeconds} s`),
+          prefix,
+          analytics: false,
+        });
+
+        const { success, limit, remaining, reset } = await ratelimit.limit(key);
+
+        c.header("X-RateLimit-Limit", String(limit));
+        c.header("X-RateLimit-Remaining", String(remaining));
+        c.header("X-RateLimit-Reset", String(reset));
+
+        if (!success) {
+          const retryAfterSec = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
+          return c.json(
+            {
+              success: false,
+              message: errorMessage,
+              retryAfter: retryAfterSec,
+            },
+            429,
+            {
+              "Retry-After": String(retryAfterSec),
+            },
+          );
+        }
+
+        await next();
+        return;
+      } catch (err) {
+        console.warn("[RateLimit] Upstash rate limit error, falling back to local memory:", err);
+      }
+    }
+
+    // 2. Tier 2: In-Memory Sliding Window Fallback
     const now = Date.now();
-    cleanup(windowMs);
+    cleanupLocal(windowMs);
 
-    const entry = store.get(ip) || { timestamps: [] };
-
-    // Drop timestamps outside the window
+    const entry = localStore.get(key) || { timestamps: [] };
     entry.timestamps = entry.timestamps.filter((t) => now - t < windowMs);
 
     if (entry.timestamps.length >= maxRequests) {
@@ -67,7 +113,8 @@ export function rateLimit(maxRequests: number, windowMs: number) {
       return c.json(
         {
           success: false,
-          message: "Too many login attempts. Please try again later.",
+          message: errorMessage,
+          retryAfter: retryAfterSec,
         },
         429,
         {
@@ -77,7 +124,7 @@ export function rateLimit(maxRequests: number, windowMs: number) {
     }
 
     entry.timestamps.push(now);
-    store.set(ip, entry);
+    localStore.set(key, entry);
 
     await next();
   };

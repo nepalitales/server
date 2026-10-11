@@ -9,6 +9,7 @@ import {
 } from "../../schemas";
 import { formatZodErrors } from "../../utils";
 import { authMiddleware } from "../../middleware/auth";
+import { bumpConfigVersion } from "../../lib/config-version";
 import type { FaqDoc } from "../../types";
 
 const faqRoutes = new Hono<AppBindings>();
@@ -122,6 +123,7 @@ faqRoutes.post("/", async (c) => {
     };
 
     await faqs.insertOne(faqDoc);
+    await bumpConfigVersion(db, c.env).catch(() => {});
 
     const { _id, ...safeFaq } = faqDoc;
     return c.json(
@@ -178,6 +180,7 @@ async function handleReorder(c: Context<AppBindings>) {
 
     if (bulkOps.length > 0) {
       await faqs.bulkWrite(bulkOps);
+      await bumpConfigVersion(db, c.env).catch(() => {});
     }
 
     return c.json({
@@ -238,6 +241,8 @@ async function handleUpdateFaq(c: Context<AppBindings>) {
       return c.json({ success: false, message: "FAQ not found" }, 404);
     }
 
+    await bumpConfigVersion(db, c.env).catch(() => {});
+
     return c.json({
       success: true,
       message: "FAQ updated successfully",
@@ -275,6 +280,8 @@ faqRoutes.delete("/:faqId", async (c) => {
     if (result.deletedCount === 0) {
       return c.json({ success: false, message: "FAQ not found" }, 404);
     }
+
+    await bumpConfigVersion(db, c.env).catch(() => {});
 
     return c.json({
       success: true,
