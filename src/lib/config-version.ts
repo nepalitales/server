@@ -3,15 +3,34 @@ import { COLLECTIONS } from "./db";
 
 const CONFIG_VERSION_DOC_ID = "global";
 
+let memoryCachedVersion: { version: string; expiresAt: number } | null = null;
+
+export function invalidateConfigVersionCache() {
+  memoryCachedVersion = null;
+}
+
+export function getCachedConfigVersion(): string | null {
+  if (memoryCachedVersion && memoryCachedVersion.expiresAt > Date.now()) {
+    return memoryCachedVersion.version;
+  }
+  return null;
+}
+
+export function setCachedConfigVersion(version: string) {
+  memoryCachedVersion = {
+    version,
+    expiresAt: Date.now() + 15_000, // 15s isolate TTL
+  };
+}
+
 /**
  * Bumps the config version in MongoDB.
  * Called by every admin mutation that clients care about:
  * - order windows, weekly off, holidays.
- *
- * The SSE endpoint polls this document and notifies connected
- * clients when the version changes, prompting a re-fetch.
  */
 export async function bumpConfigVersion(db: Db): Promise<string> {
+  invalidateConfigVersionCache();
+
   const collection = db.collection<{
     _id?: unknown;
     docId: string;
@@ -33,6 +52,7 @@ export async function bumpConfigVersion(db: Db): Promise<string> {
     { upsert: true },
   );
 
+  setCachedConfigVersion(version);
   return version;
 }
 
@@ -41,11 +61,16 @@ export async function bumpConfigVersion(db: Db): Promise<string> {
  * Returns "0" if no version doc exists yet.
  */
 export async function getConfigVersion(db: Db): Promise<string> {
+  const cached = getCachedConfigVersion();
+  if (cached) return cached;
+
   const collection = db.collection<{
     docId: string;
     version: string;
   }>(COLLECTIONS.CONFIG_VERSION);
 
   const doc = await collection.findOne({ docId: CONFIG_VERSION_DOC_ID });
-  return doc?.version ?? "0";
+  const version = doc?.version ?? "0";
+  setCachedConfigVersion(version);
+  return version;
 }

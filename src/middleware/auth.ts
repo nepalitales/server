@@ -43,13 +43,27 @@ export async function authMiddleware(
     });
 
     if (!session) {
-      return c.json({ success: false, message: "Session expired or invalid" }, 401);
+      return c.json(
+        {
+          success: false,
+          code: "SESSION_EXPIRED",
+          message: "Session expired or invalid. Please sign in again.",
+        },
+        401,
+      );
     }
 
     c.set("adminId", session.adminId);
     await next();
   } catch (error) {
-    console.error("Auth middleware error:", error);
-    return c.json({ success: false, message: "Authentication failed" }, 401);
+    console.error("Auth middleware database error:", error);
+    return c.json(
+      {
+        success: false,
+        code: "DB_UNAVAILABLE",
+        message: "Database service temporarily unavailable. Please try again shortly.",
+      },
+      503,
+    );
   }
 }

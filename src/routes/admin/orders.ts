@@ -71,102 +71,92 @@ export async function autoTransitionOrdersToPreparing(db: Db): Promise<number> {
 // ─── 1. Real-Time Admin SSE Stream ────────────────────────────────
 
 
+// ─── 1. Real-Time Admin Live Summary (Replaces SSE) ────────────────
+
 /**
- * GET /api/admin/orders/events
+ * GET /api/admin/orders/live-summary
  *
- * Real-time Server-Sent Events stream for the Admin Dashboard orders screen.
- * Pushes live updates whenever orders are placed, cancelled, or status-changed.
+ * Lightweight, edge-friendly polling endpoint for the Admin Dashboard.
+ * Returns order status counts in a single aggregation and recent events.
+ * Eliminates SSE streaming timeouts, isolate resource churn, and connection exhaustion.
  */
-adminOrderRoutes.get("/events", async (c) => {
-  const db = c.get("db");
-  const client = c.get("dbClient");
-  const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
+adminOrderRoutes.get("/live-summary", async (c) => {
+  try {
+    const db = c.get("db");
+    const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
+    const sinceParam = c.req.query("since");
+    const sinceMs = sinceParam ? parseInt(sinceParam, 10) : 0;
 
-  const { readable, writable } = new TransformStream();
-  const writer = writable.getWriter();
-  const encoder = new TextEncoder();
+    // Single aggregation query for all status counts
+    const [statusAgg, recentEvents] = await Promise.all([
+      ordersCol
+        .aggregate<{ _id: string; count: number }>([
+          {
+            $group: {
+              _id: "$status",
+              count: { $sum: 1 },
+            },
+          },
+        ])
+        .toArray(),
+      sinceMs > 0 ? getOrderEventsSince(db, sinceMs) : Promise.resolve([]),
+    ]);
 
-  const send = (event: string, data: Record<string, unknown>) => {
-    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    return writer.write(encoder.encode(payload));
-  };
-
-  const streamPromise = (async () => {
-    try {
-      // 1. Initial counts snapshot
-      const [placed, preparing, ready, porterBooked, delivered, cancelled] =
-        await Promise.all([
-          ordersCol.countDocuments({ status: "placed" }),
-          ordersCol.countDocuments({ status: "preparing" }),
-          ordersCol.countDocuments({ status: "ready" }),
-          ordersCol.countDocuments({ status: { $in: ["porter_booked", "out_for_delivery"] } }),
-          ordersCol.countDocuments({ status: "delivered" }),
-          ordersCol.countDocuments({
-            status: { $in: ["cancelled_by_customer", "cancelled_by_admin"] },
-          }),
-        ]);
-
-      let lastCheckedMs = Date.now() - 5_000;
-
-      await send("connected", {
-        message: "Connected to real-time admin orders feed",
-        counts: {
-          placed,
-          preparing,
-          ready,
-          porterBooked,
-          delivered,
-          cancelled,
-        },
-      });
-
-      const pollIntervalMs = 3_000;
-      const maxRunMs = 25_000;
-      const startedAt = Date.now();
-
-      while (Date.now() - startedAt < maxRunMs) {
-        await new Promise<void>((r) => setTimeout(r, pollIntervalMs));
-
-        const events = await getOrderEventsSince(db, lastCheckedMs);
-
-        if (events.length > 0) {
-          lastCheckedMs = Date.now();
-          for (const ev of events) {
-            await send(ev.type, {
-              orderId: ev.orderId,
-              orderNumber: ev.orderNumber,
-              status: ev.status,
-              summary: ev.summary,
-              timestamp: ev.timestamp,
-            });
-          }
-        } else {
-          // Heartbeat to keep connection alive
-          await send("heartbeat", { ts: Date.now() });
-        }
+    const countMap: Record<string, number> = {};
+    for (const item of statusAgg) {
+      if (item._id) {
+        countMap[item._id] = item.count;
       }
-
-      await send("reconnect", { reason: "stream_timeout" });
-    } catch {
-      // Client disconnected
-    } finally {
-      await writer.close().catch(() => {});
-      await client?.close().catch(() => {});
     }
-  })();
 
-  if (c.executionCtx?.waitUntil) {
-    c.executionCtx.waitUntil(streamPromise);
+    const counts = {
+      placed: countMap["placed"] || 0,
+      preparing: countMap["preparing"] || 0,
+      ready: countMap["ready"] || 0,
+      porterBooked:
+        (countMap["porter_booked"] || 0) + (countMap["out_for_delivery"] || 0),
+      delivered: countMap["delivered"] || 0,
+      cancelled:
+        (countMap["cancelled_by_customer"] || 0) +
+        (countMap["cancelled_by_admin"] || 0),
+    };
+
+    c.header("Cache-Control", "private, no-cache, must-revalidate");
+
+    return c.json({
+      success: true,
+      counts,
+      events: recentEvents.map((ev) => ({
+        type: ev.type,
+        orderId: ev.orderId,
+        orderNumber: ev.orderNumber,
+        status: ev.status,
+        timestamp: ev.timestamp instanceof Date ? ev.timestamp.toISOString() : ev.timestamp,
+        summary: ev.summary,
+      })),
+      serverTime: Date.now(),
+    });
+  } catch (err: any) {
+    console.error("Admin orders live summary error:", err);
+    return c.json(
+      { success: false, message: "Failed to fetch live summary" },
+      500,
+    );
   }
+});
 
-  return new Response(readable, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
+/**
+ * GET /api/admin/orders/events (Deprecated)
+ * Gracefully informs legacy clients that SSE has been retired.
+ */
+adminOrderRoutes.get("/events", (c) => {
+  return c.json(
+    {
+      success: false,
+      message: "SSE stream deprecated. Dashboard uses live-summary polling.",
     },
-  });
+    410,
+  );
 });
 
 // ─── 2. List Orders (With Filters & Pagination) ────────────────────

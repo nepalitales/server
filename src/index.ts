@@ -23,6 +23,7 @@ import { adminDispatchWindowRoutes } from "./routes/admin/dispatch-windows";
 import { addonRoutes } from "./routes/addons";
 import { adminOrderSettingsRoutes } from "./routes/admin/order-settings";
 import { matchEdgeAddonsCache } from "./lib/addons-cache";
+import { getCachedConfigVersion } from "./lib/config-version";
 
 const app = new Hono<AppBindings>();
 
@@ -105,6 +106,23 @@ app.use("/api/client/addons", async (c, next) => {
       status: cached.status,
       headers: cached.headers,
     });
+  }
+  await next();
+});
+
+// Serve cached config-version without opening MongoDB
+app.use("/api/client/config-version", async (c, next) => {
+  if (c.req.method !== "GET") {
+    await next();
+    return;
+  }
+  const cached = getCachedConfigVersion();
+  if (cached) {
+    c.header(
+      "Cache-Control",
+      "public, max-age=5, s-maxage=10, stale-while-revalidate=30",
+    );
+    return c.json({ success: true, version: cached });
   }
   await next();
 });
@@ -195,7 +213,7 @@ app.onError((err, c) => {
 export default withSentry(
   (env: any) => ({
     dsn: env?.SENTRY_DSN,
-    tracesSampleRate: env?.NODE_ENV === "production" ? 0.2 : 1.0,
+    tracesSampleRate: 0.0,
   }),
   app,
 );
