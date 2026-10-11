@@ -233,9 +233,10 @@ export async function initiateRazorpayRefund(
   }
 
   const basicAuth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-  const payload: Record<string, unknown> = {
-    speed, // "optimum" requests Instant Refund, falling back automatically to normal
-  };
+  const payload: Record<string, unknown> = {};
+  if (speed === "optimum") {
+    payload.speed = "optimum";
+  }
   if (amountInPaise) payload.amount = amountInPaise;
   if (reason) payload.notes = { reason };
 
@@ -253,6 +254,23 @@ export async function initiateRazorpayRefund(
 
     if (!res.ok) {
       const msg = data?.error?.description || `Razorpay refund failed: ${res.status}`;
+
+      // If instant refund failed due to lack of merchant refund reserve balance,
+      // seamlessly retry as a standard transaction reversal (which doesn't require extra balance)
+      if (
+        speed === "optimum" &&
+        typeof msg === "string" &&
+        /enough balance|insufficient balance/i.test(msg)
+      ) {
+        console.warn(
+          `[Razorpay Refund]: Instant payout unavailable (${msg}). Retrying as standard payment reversal...`,
+        );
+        return initiateRazorpayRefund({
+          ...params,
+          speed: "normal",
+        });
+      }
+
       return {
         success: false,
         refundId: "",
