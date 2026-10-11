@@ -57,16 +57,33 @@ app.use("*", timing());
 // Request logging
 app.use("*", logger());
 
-// CORS -- allow admin frontend origin
+// Local development / private IP regex (localhost, 127.0.0.1, 192.168.*, 10.*, 172.16-31.*)
+const LOCAL_DEV_ORIGIN_REGEX =
+  /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/;
+
+// Allowed production/staging/preview domains
+const ALLOWED_DOMAIN_REGEX =
+  /^https:\/\/([a-z0-9-]+\.)*(nepalitales\.com|vercel\.app)$/;
+
+// CORS -- allow client & admin origins (production, previews, and local dev)
 app.use(
   "*",
   cors({
     origin: (origin, c) => {
       // No origin header = direct API call (curl, server-to-server, mobile apps) - allow
       if (!origin) return "*";
-      const allowed = c.env.CORS_ORIGIN;
+      const allowed = c.env.CORS_ORIGIN || "";
       if (allowed === "*") return origin;
-      return allowed.split(",").map((o: string) => o.trim()).includes(origin) ? origin : "";
+      const allowedList = allowed.split(",").map((o: string) => o.trim());
+      if (allowedList.includes(origin)) return origin;
+
+      // Allow local development (localhost, 127.0.0.1, LAN IPs like 192.168.x.x)
+      if (LOCAL_DEV_ORIGIN_REGEX.test(origin)) return origin;
+
+      // Allow official Nepali Tales subdomains and Vercel preview environments
+      if (ALLOWED_DOMAIN_REGEX.test(origin)) return origin;
+
+      return "";
     },
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

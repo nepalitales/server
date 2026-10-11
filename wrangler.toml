@@ -12,7 +12,7 @@ enabled = true
 
 [vars]
 MONGODB_DB_NAME = "nepali-tales"
-CORS_ORIGIN = "https://nepalitales.com,https://www.nepalitales.com,https://admin.nepalitales.com"
+CORS_ORIGIN = "https://nepalitales.com,https://www.nepalitales.com,https://admin.nepalitales.com,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000"
 KITCHEN_ADDRESS = "Metropolis Riveria, Kasarvadavali, Ghodbunder Road, Thane, Maharashtra 400615"
 KITCHEN_PHONE = "917678097659"
 # NODE_ENV defaults to "production" via env schema.
