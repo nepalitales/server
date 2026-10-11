@@ -435,86 +435,42 @@ clientRoutes.get("/faqs", async (c) => {
   }
 });
 
-// ─── SSE - Real-time config updates ──────────────────────────────
+// ─── Config Version Polling (replaces SSE) ───────────────────────
 
 /**
- * GET /api/client/events
+ * GET /api/client/config-version
  *
- * Server-Sent Events stream for real-time config change notifications.
+ * Lightweight polling endpoint for real-time config change detection.
  *
- * How it works (stateless Worker-friendly):
- * 1. Client connects and sends its current config version via ?version=<v>.
- * 2. Worker opens a streaming Response and polls MongoDB every 5s.
- * 3. When the version in DB differs from the client's known version, it
- *    sends a "config_changed" event - client re-fetches /api/client/config.
- * 4. Heartbeats keep the connection alive between polls.
- * 5. After ~25s the stream closes gracefully. The browser's EventSource
- *    automatically reconnects (with exponential backoff).
+ * How it works:
+ * 1. Client polls this every 60s (pauses when tab is hidden).
+ * 2. Response is edge-cached by Cloudflare for 10s — most requests
+ *    never touch MongoDB.
+ * 3. Client compares returned version with its known version.
+ *    If different → re-fetches categories, order windows, etc.
  *
- * Products/categories are large; clients should poll /api/client/categories
- * on initial load (and optionally on a slower poll interval, e.g. 60s).
+ * Why not SSE?
+ * Cloudflare Workers enforce strict connection lifecycles (~30s).
+ * Every SSE stream close counted as an "Error" in Cloudflare metrics
+ * and opened a new MongoDB connection on reconnect. With 100 users,
+ * that's ~12,000 errors/hour and ~200 DB connections/minute.
  */
-clientRoutes.get("/events", async (c) => {
-  const clientVersion = c.req.query("version") ?? "0";
-  const db = c.get("db");
-  const client = c.get("dbClient");
+clientRoutes.get("/config-version", async (c) => {
+  try {
+    const db = c.get("db");
+    const version = await getConfigVersion(db);
 
-  const { readable, writable } = new TransformStream();
-  const writer = writable.getWriter();
-  const encoder = new TextEncoder();
+    // Edge-cache for 10s, browser-cache for 5s, serve stale up to 30s
+    c.header(
+      "Cache-Control",
+      "public, max-age=5, s-maxage=10, stale-while-revalidate=30"
+    );
 
-  const send = (event: string, data: Record<string, unknown>) => {
-    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    return writer.write(encoder.encode(payload));
-  };
-
-  // Run the polling loop asynchronously so we can return the Response immediately
-  const streamPromise = (async () => {
-    try {
-      await send("connected", { version: clientVersion });
-
-      let knownVersion = clientVersion;
-      const pollIntervalMs = 5_000;
-      // Stay under Cloudflare Workers' wall-clock limit
-      const maxRunMs = 25_000;
-      const startedAt = Date.now();
-
-      while (Date.now() - startedAt < maxRunMs) {
-        await new Promise<void>((r) => setTimeout(r, pollIntervalMs));
-
-        const currentVersion = await getConfigVersion(db);
-
-        if (currentVersion !== knownVersion) {
-          knownVersion = currentVersion;
-          await send("config_changed", { version: currentVersion });
-        } else {
-          // Heartbeat to detect dead connections
-          await send("heartbeat", { ts: Date.now() });
-        }
-      }
-
-      // Graceful close - EventSource reconnects automatically
-      await send("reconnect", { reason: "stream_timeout" });
-    } catch {
-      // Client disconnected - swallow
-    } finally {
-      await writer.close().catch(() => {});
-      await client?.close().catch(() => {});
-    }
-  })();
-
-  if (c.executionCtx?.waitUntil) {
-    c.executionCtx.waitUntil(streamPromise);
+    return c.json({ success: true, version });
+  } catch (error) {
+    console.error("Config version poll error:", error);
+    return c.json({ success: false, version: "0" }, 500);
   }
-
-  return new Response(readable, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no", // Disable Nginx/Cloudflare proxy buffering
-    },
-  });
 });
 
 export { clientRoutes };

@@ -25,10 +25,7 @@ export type AppBindings = {
 /**
  * Database connection middleware.
  *
- * Opens a fresh MongoClient per request.
- * For standard JSON endpoints: closes the connection in finally when the response completes.
- * For SSE streaming endpoints: leaves the connection open during the stream lifecycle,
- * and allows the streaming handler's finally block to close the client when the stream finishes.
+ * Opens a fresh MongoClient per request and closes it when the response completes.
  */
 export async function dbMiddleware(
   c: Context<AppBindings>,
@@ -55,17 +52,9 @@ export async function dbMiddleware(
   c.set("db", db);
   c.set("dbClient", client);
 
-  let isStream = false;
-
   try {
     await next();
-    const contentType = c.res?.headers?.get("content-type") || "";
-    if (contentType.includes("text/event-stream")) {
-      isStream = true;
-    }
   } finally {
-    if (!isStream) {
-      await client.close().catch(() => {});
-    }
+    await client.close().catch(() => {});
   }
 }
