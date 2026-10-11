@@ -40,7 +40,7 @@ testPaymentRoutes.post("/create-order", async (c) => {
     const customerName = (body.customerName || "Ankit Bhavarthe (Live Test)").trim();
     const customerPhone = (body.customerPhone || "917678097659").trim();
     const customerEmail = (body.customerEmail || "bhavartheankit@gmail.com").toLowerCase().trim();
-    const amountInInr = 2; // Fixed ₹2 test amount
+    const amountInInr = 1; // Fixed ₹1 test amount
 
     const db = c.get("db");
     const isDev = c.env.NODE_ENV === "development";
@@ -86,14 +86,14 @@ testPaymentRoutes.post("/create-order", async (c) => {
         pincode: "400615",
         borzoFormat: {
           address: "Metropolis Riveria, Kasarvadavali, Thane, Maharashtra 400615",
-          note: "Live ₹2 Test Order",
+          note: "Live ₹1 Test Order",
         },
       },
       orderType: "pickup",
       items: [
         {
-          productId: "prod_live_test_2rs",
-          productName: "Nepali Tales Live Payment Verification (₹2)",
+          productId: "prod_live_test_1rs",
+          productName: "Nepali Tales Live Payment Verification (₹1)",
           price: amountInInr,
           quantity: 1,
           subtotal: amountInInr,
@@ -115,7 +115,7 @@ testPaymentRoutes.post("/create-order", async (c) => {
         {
           status: "pending_payment",
           timestamp: now,
-          note: `Live ₹2 test order created. Awaiting Razorpay payment.`,
+          note: `Live ₹1 test order created. Awaiting Razorpay payment.`,
         },
       ],
       createdAt: now,
@@ -126,7 +126,7 @@ testPaymentRoutes.post("/create-order", async (c) => {
 
     return c.json({
       success: true,
-      message: "₹2 Razorpay test order created successfully",
+      message: "₹1 Razorpay test order created successfully",
       orderId,
       orderNumber,
       razorpayOrderId: rzpOrder.razorpayOrderId,
@@ -339,7 +339,7 @@ testPaymentRoutes.post("/cancel-and-refund", async (c) => {
 
     return c.json({
       success: true,
-      message: "Order cancelled and ₹2 refund successfully initiated via Razorpay!",
+      message: `Order cancelled and ₹${order.totalAmount} refund successfully initiated via Razorpay!`,
       refundId: refundRes.refundId,
       refundAmount: order.totalAmount,
       status: refundRes.status,

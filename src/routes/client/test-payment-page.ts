@@ -473,7 +473,7 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
       </div>
       <div class="badge-live">
         <span class="pulse-dot"></span>
-        Live Gateway (₹2.00)
+        Live Gateway (₹1.00)
       </div>
     </header>
 
@@ -504,17 +504,17 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
             <span class="item-name">🥟 Nepali Tales UPI Verification Cart</span>
             <span class="item-sub">Production Gateway Test Order &bull; Auto-Refundable</span>
           </div>
-          <div class="item-price">₹2.00</div>
+          <div class="item-price">₹1.00</div>
         </div>
 
         <button id="btnPay" class="btn btn-pay" onclick="handleStartPayment()">
           <span id="btnPaySpinner" class="spinner" style="display: none;"></span>
-          <span id="btnPayText">⚡ Step 1: Pay ₹2 with Live UPI (Razorpay)</span>
+          <span id="btnPayText">⚡ Step 1: Pay ₹1 with Live UPI (Razorpay)</span>
         </button>
 
         <button id="btnRefund" class="btn btn-refund" onclick="handleCancelAndRefund()" disabled>
           <span id="btnRefundSpinner" class="spinner" style="display: none;"></span>
-          <span id="btnRefundText">🔄 Step 2: Cancel Order & Instant Auto-Refund (₹2)</span>
+          <span id="btnRefundText">🔄 Step 2: Cancel Order & Instant Auto-Refund (₹1)</span>
         </button>
 
         <div id="activeOrderStrip" class="info-strip" style="display: none;">
@@ -535,7 +535,7 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
             <div class="step-icon">1</div>
             <div class="step-content">
               <div class="step-title">Razorpay Order Creation</div>
-              <div id="stepOrderDesc" class="step-desc">Generates live ₹2 order ID on Razorpay API</div>
+              <div id="stepOrderDesc" class="step-desc">Generates live ₹1 order ID on Razorpay API</div>
             </div>
           </div>
 
@@ -586,7 +586,7 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
       <div id="consoleBody" class="console-body">
         <div class="log-line">
           <span class="log-time">[System Ready]</span>
-          <span class="log-info">Ready to test live ₹2 payment and refund loop. Click "Step 1" to begin.</span>
+          <span class="log-info">Ready to test live ₹1 payment and refund loop. Click "Step 1" to begin.</span>
         </div>
       </div>
     </div>
@@ -634,9 +634,9 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
 
       btnPay.disabled = true;
       btnPaySpinner.style.display = "inline-block";
-      btnPayText.textContent = "Creating ₹2 Razorpay Order...";
+      btnPayText.textContent = "Creating ₹1 Razorpay Order...";
 
-      log("Initiating ₹2 order creation for " + name + " (" + email + ")...", "info");
+      log("Initiating ₹1 order creation for " + name + " (" + email + ")...", "info");
 
       try {
         const res = await fetch(API_BASE + "/api/client/test-payment/create-order", {
@@ -683,7 +683,7 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
       } finally {
         btnPay.disabled = false;
         btnPaySpinner.style.display = "none";
-        btnPayText.textContent = "⚡ Step 1: Pay ₹2 with Live UPI (Razorpay)";
+        btnPayText.textContent = "⚡ Step 1: Pay ₹1 with Live UPI (Razorpay)";
       }
     }
 
@@ -695,7 +695,7 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
         amount: opts.amount,
         currency: "INR",
         name: "Nepali Tales",
-        description: "Live Payment & Instant Refund Verification (₹2.00)",
+        description: "Live Payment & Instant Refund Verification (₹1.00)",
         order_id: opts.orderId,
         prefill: {
           name: opts.name,
@@ -784,7 +784,7 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
       btnRefundSpinner.style.display = "inline-block";
       btnRefundText.textContent = "Processing Live Refund...";
 
-      log("Requesting cancellation & full ₹2 refund for order " + currentOrderId + "...", "refund");
+      log("Requesting cancellation & full refund for order " + currentOrderId + "...", "refund");
 
       try {
         const res = await fetch(API_BASE + "/api/client/test-payment/cancel-and-refund", {
@@ -808,13 +808,13 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
         document.getElementById("lblStatus").textContent = "Cancelled & Refunded";
         document.getElementById("lblStatus").style.color = "#c084fc";
 
-        btnRefundText.textContent = "✅ ₹2 Refund Processed via Razorpay";
+        btnRefundText.textContent = "✅ ₹" + data.refundAmount + " Refund Processed via Razorpay";
 
       } catch (err) {
         log("Refund failed: " + err.message, "error");
         alert("Refund error: " + err.message);
         btnRefund.disabled = false;
-        btnRefundText.textContent = "🔄 Step 2: Cancel Order & Instant Auto-Refund (₹2)";
+        btnRefundText.textContent = "🔄 Step 2: Cancel Order & Instant Auto-Refund (₹1)";
       } finally {
         btnRefundSpinner.style.display = "none";
       }
