@@ -343,6 +343,8 @@ testPaymentRoutes.post("/cancel-and-refund", async (c) => {
       refundId: refundRes.refundId,
       refundAmount: order.totalAmount,
       status: refundRes.status,
+      speedProcessed: refundRes.speedProcessed,
+      speedRequested: refundRes.speedRequested,
     });
   } catch (err: any) {
     console.error("Test payment cancel-and-refund error:", err);

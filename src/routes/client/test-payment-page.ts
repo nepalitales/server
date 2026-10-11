@@ -798,8 +798,8 @@ export const TEST_CHECKOUT_HTML = `<!DOCTYPE html>
           throw new Error(data.message || "Refund request failed");
         }
 
-        log("SUCCESS! Razorpay Refund Initiated: ID " + data.refundId + " | Amount: ₹" + data.refundAmount, "success");
-        log("Refund status: '" + data.status + "'. Money will credit back to your UPI account!", "refund");
+        log("SUCCESS! Razorpay Refund Initiated: ID " + data.refundId + " | Speed: " + (data.speedProcessed || "optimum") + " | Amount: ₹" + data.refundAmount, "success");
+        log("Refund status: '" + data.status + "'. Speed: '" + (data.speedProcessed || "optimum") + "'. Money will credit back to your UPI account!", "refund");
 
         document.getElementById("stepRefund").classList.remove("active");
         document.getElementById("stepRefund").classList.add("completed");

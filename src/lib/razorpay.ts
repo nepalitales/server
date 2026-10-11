@@ -35,6 +35,7 @@ export interface RefundParams {
   paymentId: string;
   amountInInr?: number; // optional, full refund if omitted
   reason?: string;
+  speed?: "optimum" | "normal";
   keyId?: string;
   keySecret?: string;
   isDevelopment?: boolean;
@@ -45,6 +46,8 @@ export interface RazorpayRefundResult {
   refundId: string;
   amount: number;
   status: string;
+  speedProcessed?: string;
+  speedRequested?: string;
   isSimulated: boolean;
   error?: string;
 }
@@ -202,7 +205,7 @@ export async function verifyRazorpaySignature(
 export async function initiateRazorpayRefund(
   params: RefundParams,
 ): Promise<RazorpayRefundResult> {
-  const { paymentId, amountInInr, reason, keyId, keySecret, isDevelopment } = params;
+  const { paymentId, amountInInr, reason, speed = "optimum", keyId, keySecret, isDevelopment } = params;
   const amountInPaise = amountInInr ? Math.round(amountInInr * 100) : undefined;
 
   // Mock / Dev fallback ONLY when in development mode
@@ -212,6 +215,8 @@ export async function initiateRazorpayRefund(
       refundId: `rfnd_mock_${Date.now().toString(36)}`,
       amount: amountInPaise ?? 0,
       status: "processed",
+      speedProcessed: "instant",
+      speedRequested: speed,
       isSimulated: true,
     };
   }
@@ -228,7 +233,9 @@ export async function initiateRazorpayRefund(
   }
 
   const basicAuth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-  const payload: Record<string, unknown> = {};
+  const payload: Record<string, unknown> = {
+    speed, // "optimum" requests Instant Refund, falling back automatically to normal
+  };
   if (amountInPaise) payload.amount = amountInPaise;
   if (reason) payload.notes = { reason };
 
@@ -261,6 +268,8 @@ export async function initiateRazorpayRefund(
       refundId: data.id,
       amount: data.amount,
       status: data.status,
+      speedProcessed: data.speed_processed,
+      speedRequested: data.speed_requested,
       isSimulated: false,
     };
   } catch (error: any) {
