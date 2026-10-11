@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type { AppBindings } from "../../config/app";
 import { COLLECTIONS } from "../../lib/db";
 import { authMiddleware } from "../../middleware/auth";
-import { dispatchBorzoPorter } from "../../lib/borzo-dispatch";
 import { initiateRazorpayRefund } from "../../lib/razorpay";
 import { recordOrderEvent, getOrderEventsSince } from "../../lib/order-events";
 import { releaseSlotReservation } from "../../lib/dispatch-windows";
@@ -860,96 +859,7 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
   }
 });
 
-// ─── 8. Retry Porter Booking ───────────────────────────────────────
-
-/**
- * POST /api/admin/orders/:orderId/retry-porter
- *
- * Retries dispatching the automated Borzo porter booking if the initial attempt failed.
- */
-adminOrderRoutes.post("/:orderId/retry-porter", async (c) => {
-  try {
-    const orderId = c.req.param("orderId");
-    const db = c.get("db");
-    const isDev = c.env.NODE_ENV === "development";
-
-    const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
-    const order = await ordersCol.findOne({ id: orderId });
-
-    if (!order) {
-      return c.json({ success: false, message: "Order not found" }, 404);
-    }
-
-    if ((order.orderType || "delivery") === "pickup") {
-      return c.json(
-        { success: false, message: "Pickup orders do not use porter dispatch" },
-        400,
-      );
-    }
-
-    const porterResult = await dispatchBorzoPorter({
-      order,
-      kitchenAddress: c.env.KITCHEN_ADDRESS,
-      kitchenPhone: c.env.KITCHEN_PHONE,
-      borzoServiceUrl: c.env.BORZO_SERVICE_URL,
-      borzoServiceKey: c.env.BORZO_SERVICE_KEY,
-      isDevelopment: isDev,
-    });
-
-    const now = new Date();
-
-    if (!porterResult.success) {
-      return c.json(
-        {
-          success: false,
-          message: `Retry porter booking failed: ${porterResult.error}`,
-          hint: porterResult.hint,
-        },
-        422,
-      );
-    }
-
-    await ordersCol.updateOne(
-      { id: orderId },
-      {
-        $set: {
-          status: "porter_booked",
-          borzo: porterResult.borzoInfo,
-          updatedAt: now,
-        },
-        $push: {
-          timeline: {
-            status: "porter_booked",
-            timestamp: now,
-            note: `Porter booking retried and succeeded (ID: ${porterResult.borzoInfo?.borzoOrderName}).`,
-          },
-        } as any,
-      },
-    );
-
-    const updated = await ordersCol.findOne({ id: orderId });
-
-    await recordOrderEvent(db, {
-      type: "order_status_updated",
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      status: "porter_booked",
-      summary: { trackingUrl: porterResult.borzoInfo?.trackingUrl },
-    });
-
-    return c.json({
-      success: true,
-      message: "Borzo Porter booking succeeded on retry!",
-      order: updated,
-      borzo: porterResult.borzoInfo,
-    });
-  } catch (error) {
-    console.error("Retry porter booking error:", error);
-    return c.json({ success: false, message: "Internal server error" }, 500);
-  }
-});
-
-// ─── 9. Admin Cancel Order (With Manual Refund Note) ───────────────
+// ─── 8. Admin Cancel Order (With Manual Refund Note) ───────────────
 
 /**
  * POST /api/admin/orders/:orderId/cancel

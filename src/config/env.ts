@@ -40,11 +40,6 @@ export const envSchema = z.object({
     ),
   KITCHEN_PHONE: z.string().default("917678097659"),
 
-  // Standalone Borzo Porter Service
-  BORZO_SERVICE_URL: z.string().url().default("http://127.0.0.1:8788"),
-  BORZO_SERVICE_KEY: z.string().default("dev-internal-key-change-me"),
-
-
   NODE_ENV: z
     .enum(["development", "production", "staging"])
     .default("production"),
