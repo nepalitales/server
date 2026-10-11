@@ -761,8 +761,11 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
       );
     }
 
-    // Pickup: food is ready for the customer to collect - no Borzo booking
-    if (targetStatus === "ready" && orderType === "pickup") {
+    // Food is marked ready (both pickup and delivery)
+    if (targetStatus === "ready") {
+      const isPickup = orderType === "pickup";
+      const readyNote = note || (isPickup ? "Order is ready for pickup at the kitchen" : "Order is freshly prepared and packed for delivery");
+
       await ordersCol.updateOne(
         { id: orderId },
         {
@@ -771,7 +774,7 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
             timeline: {
               status: "ready",
               timestamp: now,
-              note: note || "Order is ready for pickup at the kitchen",
+              note: readyNote,
             },
           } as any,
         },
@@ -782,11 +785,11 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
         sendOrderStatusEmail({
           order: updated || order,
           status: "ready",
-          note: note || "Your order is ready for pickup.",
+          note,
           apiKey: c.env.RESEND_API_KEY,
           fromEmail: c.env.RESEND_FROM_EMAIL,
           isDevelopment: isDev,
-        }).catch((e) => console.error("Failed to send pickup-ready email:", e));
+        }).catch((e) => console.error("Failed to send order ready email:", e));
       }
 
       await recordOrderEvent(db, {
@@ -794,120 +797,15 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
         orderId: order.id,
         orderNumber: order.orderNumber,
         status: "ready",
-        summary: { orderType: "pickup" },
+        summary: { orderType },
       });
 
       return c.json({
         success: true,
-        message: "Order marked ready for pickup. Customer has been emailed.",
+        message: isPickup
+          ? "Order marked ready for pickup. Customer has been emailed."
+          : "Order marked ready. Customer has been emailed.",
         order: updated,
-      });
-    }
-
-    // ── AUTOMATED PORTER DISPATCH ON "ready" (delivery only) ──────
-    if (targetStatus === "ready") {
-      const porterResult = await dispatchBorzoPorter({
-        order,
-        kitchenAddress: c.env.KITCHEN_ADDRESS,
-        kitchenPhone: c.env.KITCHEN_PHONE,
-        borzoServiceUrl: c.env.BORZO_SERVICE_URL,
-        borzoServiceKey: c.env.BORZO_SERVICE_KEY,
-        isDevelopment: isDev,
-      });
-
-      if (!porterResult.success) {
-        // Porter dispatch failed -- record failure so admin can retry or call customer
-        await ordersCol.updateOne(
-          { id: orderId },
-          {
-            $set: {
-              status: "porter_failed",
-              borzo: {
-                error: porterResult.error,
-                updatedAt: now,
-              },
-              updatedAt: now,
-            },
-            $push: {
-              timeline: {
-                status: "porter_failed",
-                timestamp: now,
-                note: `Marked ready, but automated porter booking failed: ${porterResult.error}`,
-              },
-            } as any,
-          },
-        );
-
-        await recordOrderEvent(db, {
-          type: "porter_status_updated",
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          status: "porter_failed",
-          summary: { error: porterResult.error },
-        });
-
-        return c.json(
-          {
-            success: false,
-            porterFailed: true,
-            message:
-              "Food is marked ready, but automated Borzo Porter booking failed. Please click 'Retry Porter' or call customer.",
-            error: porterResult.error,
-            hint: porterResult.hint,
-          },
-          422,
-        );
-      }
-
-      // Porter booking succeeded!
-      await ordersCol.updateOne(
-        { id: orderId },
-        {
-          $set: {
-            status: "porter_booked",
-            borzo: porterResult.borzoInfo,
-            updatedAt: now,
-          },
-          $push: {
-            timeline: {
-              status: "porter_booked",
-              timestamp: now,
-              note: `Food ready. Borzo Porter booked (ID: ${porterResult.borzoInfo?.borzoOrderName}). Live tracking: ${porterResult.borzoInfo?.trackingUrl}`,
-            },
-          } as any,
-        },
-      );
-
-      const updated = await ordersCol.findOne({ id: orderId });
-
-      // Send live tracking email to customer via Resend
-      if (order.customer?.email) {
-        sendOrderStatusEmail({
-          order,
-          status: "porter_booked",
-          trackingUrl: porterResult.borzoInfo?.trackingUrl,
-          apiKey: c.env.RESEND_API_KEY,
-          fromEmail: c.env.RESEND_FROM_EMAIL,
-          isDevelopment: isDev,
-        }).catch((e) => console.error("Failed to send porter booked email:", e));
-      }
-
-      await recordOrderEvent(db, {
-        type: "order_status_updated",
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        status: "porter_booked",
-        summary: {
-          borzoOrderId: porterResult.borzoInfo?.borzoOrderId,
-          trackingUrl: porterResult.borzoInfo?.trackingUrl,
-        },
-      });
-
-      return c.json({
-        success: true,
-        message: "Food marked ready and Borzo Porter successfully booked!",
-        order: updated,
-        borzo: porterResult.borzoInfo,
       });
     }
 

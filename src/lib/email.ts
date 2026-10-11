@@ -37,7 +37,7 @@ export interface SendEmailResult {
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   const { to, subject, html, text, apiKey, from, isDevelopment } = options;
   const recipients = Array.isArray(to) ? to : [to];
-  const fromAddress = from || "Nepali Tales <onboarding@resend.dev>";
+  const fromAddress = from || "Nepali Tales <orders@nepalitales.com>";
 
   // Simulate if no API key is provided
   if (!apiKey) {
@@ -443,12 +443,21 @@ export async function sendOrderStatusEmail(
       message = "Our Nepali chefs have begun freshly preparing your authentic delicacies.";
       break;
 
-    case "ready":
-      statusTitle = "Ready for Pickup!";
-      statusBadge = "Ready";
-      statusColor = "#4f46e5";
-      message = `Your order is packed and ready. Please collect it from the kitchen. ${order.deliveryAddress.borzoFormat.note || ""}`.trim();
+    case "ready": {
+      const isPickup = (order.orderType || "delivery") === "pickup";
+      if (isPickup) {
+        statusTitle = "Ready for Pickup!";
+        statusBadge = "Ready";
+        statusColor = "#4f46e5";
+        message = `Your authentic Nepali delicacies are freshly prepared, packed, and ready for pickup at our kitchen! ${order.deliveryAddress?.borzoFormat?.note || ""}`.trim();
+      } else {
+        statusTitle = "Your Order is Ready!";
+        statusBadge = "Packed & Ready";
+        statusColor = "#16a34a";
+        message = "Your authentic Nepali delicacies are freshly prepared and packed hot! Our kitchen team is dispatching your order for delivery.";
+      }
       break;
+    }
 
     case "porter_booked":
     case "out_for_delivery":
@@ -520,8 +529,8 @@ export async function sendOrderStatusEmail(
               ${trackingButtonHtml}
 
               <div style="background-color: #f9fafb; border-radius: 10px; padding: 14px 16px; border: 1px solid #f3f4f6; margin-top: 20px;">
-                <p style="margin: 0 0 4px 0; font-size: 13px; color: #6b7280;">${(order.orderType || "delivery") === "pickup" ? "Pickup at:" : "Delivering to:"}</p>
-                <p style="margin: 0; font-size: 14px; font-weight: 600; color: #111827;">${order.deliveryAddress.borzoFormat.address}</p>
+                <p style="margin: 0 0 4px 0; font-size: 13px; color: #6b7280;">${(order.orderType || "delivery") === "pickup" ? "Pickup at Kitchen:" : "Delivering to:"}</p>
+                <p style="margin: 0; font-size: 14px; font-weight: 600; color: #111827;">${(order.orderType || "delivery") === "pickup" ? "Metropolis Riveria, Kasarvadavali, Thane" : (order.deliveryAddress?.street || order.deliveryAddress?.borzoFormat?.address || "Thane, Maharashtra")}</p>
               </div>
             </td>
           </tr>
