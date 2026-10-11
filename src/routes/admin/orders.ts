@@ -668,7 +668,7 @@ adminOrderRoutes.get("/:orderId/bill", async (c) => {
     const bill = {
       restaurant: {
         name: "Nepali Tales",
-        tagline: "Authentic Himalayan Momos & Artisanal Chilli Oil",
+        tagline: "Authentic Nepali Momo & Artisanal Chilli Oil",
         address: c.env.KITCHEN_ADDRESS,
         phone: c.env.KITCHEN_PHONE,
       },
@@ -761,7 +761,7 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
       );
     }
 
-    // Pickup: food is ready for the customer to collect — no Borzo booking
+    // Pickup: food is ready for the customer to collect - no Borzo booking
     if (targetStatus === "ready" && orderType === "pickup") {
       await ordersCol.updateOne(
         { id: orderId },

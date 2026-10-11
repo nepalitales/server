@@ -156,7 +156,7 @@ export async function sendEmailOtp(options: SendEmailOtpOptions): Promise<SendEm
           <tr>
             <td style="padding: 32px 32px 24px 32px; text-align: center; background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%);">
               <h1 style="margin: 0; font-size: 26px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">Nepali Tales</h1>
-              <p style="margin: 6px 0 0 0; font-size: 13px; color: #fecaca; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;">Authentic Himalayan Cloud Kitchen</p>
+              <p style="margin: 6px 0 0 0; font-size: 13px; color: #fecaca; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;">Authentic Nepali Cloud Kitchen</p>
             </td>
           </tr>
 

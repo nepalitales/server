@@ -2,7 +2,7 @@
  * Cloudinary upload utility.
  *
  * Uses Cloudinary's unsigned/signed upload REST API directly
- * (no SDK needed — keeps the Worker bundle small).
+ * (no SDK needed - keeps the Worker bundle small).
  */
 
 interface CloudinaryUploadResult {

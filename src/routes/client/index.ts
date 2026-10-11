@@ -25,7 +25,7 @@ import type {
 
 const clientRoutes = new Hono<AppBindings>();
 
-// ─── Customer Authentication (WhatsApp OTP) ──────────────────────
+// ─── Customer Authentication (Email OTP) ─────────────────────────
 clientRoutes.route("/auth", clientAuthRoutes);
 
 // ─── Customer Delivery Addresses (Borzo Compatible) ─────────────
@@ -435,7 +435,7 @@ clientRoutes.get("/faqs", async (c) => {
   }
 });
 
-// ─── SSE — Real-time config updates ──────────────────────────────
+// ─── SSE - Real-time config updates ──────────────────────────────
 
 /**
  * GET /api/client/events
@@ -446,7 +446,7 @@ clientRoutes.get("/faqs", async (c) => {
  * 1. Client connects and sends its current config version via ?version=<v>.
  * 2. Worker opens a streaming Response and polls MongoDB every 5s.
  * 3. When the version in DB differs from the client's known version, it
- *    sends a "config_changed" event — client re-fetches /api/client/config.
+ *    sends a "config_changed" event - client re-fetches /api/client/config.
  * 4. Heartbeats keep the connection alive between polls.
  * 5. After ~25s the stream closes gracefully. The browser's EventSource
  *    automatically reconnects (with exponential backoff).
@@ -493,10 +493,10 @@ clientRoutes.get("/events", async (c) => {
         }
       }
 
-      // Graceful close — EventSource reconnects automatically
+      // Graceful close - EventSource reconnects automatically
       await send("reconnect", { reason: "stream_timeout" });
     } catch {
-      // Client disconnected — swallow
+      // Client disconnected - swallow
     } finally {
       await writer.close().catch(() => {});
       await client?.close().catch(() => {});

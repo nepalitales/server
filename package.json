@@ -1,7 +1,7 @@
 {
   "name": "nepali-tales-api",
   "version": "1.0.0",
-  "description": "Nepali Tales Admin API — Hono on Cloudflare Workers",
+  "description": "Nepali Tales Admin API - Hono on Cloudflare Workers",
   "private": true,
   "type": "module",
   "scripts": {

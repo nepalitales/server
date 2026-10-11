@@ -291,7 +291,7 @@ productRoutes.patch("/:productId", async (c) => {
           apiSecret: c.env.CLOUDINARY_API_SECRET,
         });
       } catch (err) {
-        // Log but don't fail the request — the update already succeeded
+        // Log but don't fail the request - the update already succeeded
         console.error("Failed to delete old Cloudinary image:", err);
       }
     }

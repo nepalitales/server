@@ -1,6 +1,6 @@
 import type { ObjectId } from "mongodb";
 
-/** Days of the week — lowercase, consistent across all APIs */
+/** Days of the week - lowercase, consistent across all APIs */
 export type DayOfWeek =
   | "sunday"
   | "monday"
@@ -117,7 +117,7 @@ export interface DispatchSlotBucketDoc {
   updatedAt: Date;
 }
 
-/** Weekly off document — single document with array of days */
+/** Weekly off document - single document with array of days */
 export interface WeeklyOffDoc {
   _id?: ObjectId;
   days: DayOfWeek[];

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * Environment variables schema with strict validation.
- * Validated once at startup — fail fast if misconfigured.
+ * Validated once at startup - fail fast if misconfigured.
  */
 export const envSchema = z.object({
   MONGODB_URI: z
@@ -21,11 +21,6 @@ export const envSchema = z.object({
 
   // Sentry Observability & Error Alerting
   SENTRY_DSN: z.string().url("SENTRY_DSN must be a valid Sentry URL").optional(),
-
-  // WhatsApp Cloud API
-  WHATSAPP_API_TOKEN: z.string().min(1).optional(),
-  WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
-  WHATSAPP_OTP_TEMPLATE_NAME: z.string().min(1).optional(),
 
   // Razorpay Payment Gateway
   RAZORPAY_KEY_ID: z.string().min(1).optional(),

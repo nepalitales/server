@@ -62,9 +62,11 @@ app.use(
   "*",
   cors({
     origin: (origin, c) => {
+      // No origin header = direct API call (curl, server-to-server, mobile apps) - allow
+      if (!origin) return "*";
       const allowed = c.env.CORS_ORIGIN;
       if (allowed === "*") return origin;
-      return allowed.split(",").includes(origin) ? origin : "";
+      return allowed.split(",").map((o: string) => o.trim()).includes(origin) ? origin : "";
     },
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

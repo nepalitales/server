@@ -5,7 +5,7 @@ import type { AppBindings } from "../config/app";
  * Simple sliding-window rate limiter for Cloudflare Workers.
  *
  * Uses a module-scoped Map that persists within a single isolate.
- * This provides per-isolate protection — not globally perfect,
+ * This provides per-isolate protection - not globally perfect,
  * but a meaningful first line of defense against brute-force.
  *
  * For stronger guarantees, layer Cloudflare Rate Limiting Rules

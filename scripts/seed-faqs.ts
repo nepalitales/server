@@ -82,9 +82,9 @@ export const INITIAL_FAQS = [
     isActive: true,
   },
   {
-    question: "Are the momos spicy?",
+    question: "Are the momo spicy?",
     answer:
-      "The momos? No.\nThe chutney? Absolutely yes.\nThe chutney woke up this morning and chose violence.",
+      "The momo? No.\nThe chutney? Absolutely yes.\nThe chutney woke up this morning and chose violence.",
     category: "Menu",
     displayOrder: 4,
     isActive: true,
@@ -92,15 +92,15 @@ export const INITIAL_FAQS = [
   {
     question: "Does the food get soggy or cold during delivery?",
     answer:
-      "Soggy? Nope.\nCold? Maybe, depending on how far you are and how many traffic signals your delivery rider meets on the way.\nIf it arrives a little chilly, simply steam or microwave it for 4 to 5 minutes.\nYour momos will be back to their happy selves.",
+      "Soggy? Nope.\nCold? Maybe, depending on how far you are and how many traffic signals your delivery rider meets on the way.\nIf it arrives a little chilly, simply steam or microwave it for 4 to 5 minutes.\nYour momo will be back to their happy selves.",
     category: "Delivery",
     displayOrder: 5,
     isActive: true,
   },
   {
-    question: "Are the momos freshly prepared?",
+    question: "Are the momo freshly prepared?",
     answer:
-      "Yes!\nWe don't have an army of momos sitting around waiting for orders.\nEvery order is prepared with fresh ingredients and cooked fresh before delivery.\nYour momo's journey starts only after you click \"Order.\"",
+      "Yes!\nWe don't have an army of momo sitting around waiting for orders.\nEvery order is prepared with fresh ingredients and cooked fresh before delivery.\nYour momo's journey starts only after you click \"Order.\"",
     category: "Food Quality",
     displayOrder: 6,
     isActive: true,
@@ -116,7 +116,7 @@ export const INITIAL_FAQS = [
   {
     question: "Why does my order take a little longer?",
     answer:
-      "Because good momo takes time.\nIf instant noodles and handmade momos ran a race, instant noodles would win every time.\nWe're okay with that.",
+      "Because good momo takes time.\nIf instant noodles and handmade momo ran a race, instant noodles would win every time.\nWe're okay with that.",
     category: "Ordering",
     displayOrder: 8,
     isActive: true,

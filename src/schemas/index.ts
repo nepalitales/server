@@ -265,7 +265,7 @@ export const updateHolidaySchema = z.object({
     .optional(),
 });
 
-// ─── Client WhatsApp Auth Schemas ────────────────────────────────
+// ─── Client Auth Schemas ──────────────────────────────────────────
 
 export const clientPhoneSchema = z
   .string()

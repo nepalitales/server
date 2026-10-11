@@ -1,6 +1,6 @@
 /**
  * Email OTP helpers (hashing / generation).
- * Customer login is Resend email only — no WhatsApp OTP.
+ * Customer login is Resend email only - no WhatsApp OTP.
  */
 
 export function generateNumericOtp(length = 6): string {
