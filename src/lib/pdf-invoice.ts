@@ -1,358 +1,252 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import type { OrderDoc } from "../types";
 
+function wrapText(text: string, maxChars: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = "";
+  for (const w of words) {
+    if (!current) {
+      current = w;
+    } else if ((current + " " + w).length <= maxChars) {
+      current += " " + w;
+    } else {
+      lines.push(current);
+      current = w;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+interface ReceiptLine {
+  text?: string;
+  left?: string;
+  right?: string;
+  align?: "left" | "center" | "right";
+  bold?: boolean;
+}
+
 /**
- * Generates an itemized PDF invoice for a Nepali Tales order using pure pdf-lib.
- * Runs seamlessly in Cloudflare Workers and Node.js without any canvas or native dependencies.
+ * Generates an authentic 80mm thermal receipt PDF for a Nepali Tales order.
+ * Pure vector pdf-lib, runs seamlessly on Cloudflare Workers.
  */
 export async function generateOrderInvoicePdf(order: OrderDoc): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
-  // Standard A4 dimensions: 595.28 x 841.89 points
-  const page = pdfDoc.addPage([595.28, 841.89]);
-  const { width, height } = page.getSize();
 
-  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fontMono = await pdfDoc.embedFont(StandardFonts.Courier);
+  const font = await pdfDoc.embedFont(StandardFonts.Courier);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
 
-  // Brand Colors
-  const brandRed = rgb(0.85, 0.13, 0.13); // #D92121
-  const darkGray = rgb(0.12, 0.12, 0.12);
-  const mediumGray = rgb(0.4, 0.4, 0.4);
-  const lightGray = rgb(0.9, 0.9, 0.9);
-  const lineGray = rgb(0.8, 0.8, 0.8);
+  const COLS = 38;
+  const FONT_SIZE = 8.5;
+  const LINE_HEIGHT = 11.5;
+  const PAGE_WIDTH = 226.77; // 80mm in points
+  const MARGIN_LEFT = 14;
 
-  let y = height - 50;
-
-  // 1. Header: Brand & Title
-  page.drawText("NEPALI TALES", {
-    x: 50,
-    y,
-    size: 22,
-    font: fontBold,
-    color: brandRed,
-  });
-
-  page.drawText("INVOICE / RECEIPT", {
-    x: width - 200,
-    y,
-    size: 14,
-    font: fontBold,
-    color: darkGray,
-  });
-
-  y -= 16;
-  page.drawText("Authentic Himalayan Cloud Kitchen", {
-    x: 50,
-    y,
-    size: 9.5,
-    font: fontRegular,
-    color: mediumGray,
-  });
-
-  const invoiceNumText = `Invoice #: ${order.orderNumber}`;
-  page.drawText(invoiceNumText, {
-    x: width - 200,
-    y,
-    size: 10,
-    font: fontBold,
-    color: darkGray,
-  });
-
-  y -= 14;
-  page.drawText("Metropolis Rivera, Shop No 10, Kasarvadavali, Opp to Laxmi Narayan Mandir, 400615", {
-    x: 50,
-    y,
-    size: 8.5,
-    font: fontRegular,
-    color: mediumGray,
-  });
-
-  const orderDateFormatted = new Intl.DateTimeFormat("en-IN", {
+  const formattedDate = new Intl.DateTimeFormat("en-IN", {
     timeZone: "Asia/Kolkata",
     day: "2-digit",
     month: "short",
     year: "numeric",
+  }).format(new Date(order.createdAt));
+
+  const formattedTime = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
   }).format(new Date(order.createdAt));
 
-  page.drawText(`Date: ${orderDateFormatted}`, {
-    x: width - 200,
-    y,
-    size: 9,
-    font: fontRegular,
-    color: mediumGray,
+  const isPickup = (order.orderType || "delivery") === "pickup";
+  const fulfillmentType = isPickup ? "PICKUP" : "DELIVERY";
+
+  const lines: ReceiptLine[] = [];
+  const divider: ReceiptLine = { text: "-".repeat(COLS), bold: true };
+
+  // 1. Header
+  lines.push({ text: "NEPALI TALES", bold: true, align: "center" });
+  const kitchenAddress = "Metropolis Rivera, Shop No 10, Kasarvadavali, Opp to Laxmi Narayan Mandir, 400615";
+  for (const l of wrapText(kitchenAddress, COLS)) {
+    lines.push({ text: l, align: "center" });
+  }
+  lines.push({ text: "Ph: 917678097659", align: "center" });
+  lines.push(divider);
+  lines.push({ text: "RECEIPT", bold: true, align: "center" });
+  lines.push(divider);
+
+  // 2. Customer & Order Meta
+  lines.push({
+    left: `Name: ${(order.customer.name || "Customer").slice(0, 19)}`,
+    right: `Inv: ${order.orderNumber}`,
+    bold: true,
+  });
+  lines.push({
+    left: `Order #: ${order.orderNumber}`,
+    right: formattedDate,
+  });
+  lines.push({
+    left: `TYPE: ${fulfillmentType}`,
+    right: `Time: ${formattedTime}`,
+    bold: true,
   });
 
-  y -= 14;
-  page.drawText("Phone: +91 7678097659 | Email: orders@nepalitales.com", {
-    x: 50,
-    y,
-    size: 8.5,
-    font: fontRegular,
-    color: mediumGray,
-  });
-
-  page.drawText(`Status: ${order.status.toUpperCase()}`, {
-    x: width - 200,
-    y,
-    size: 9,
-    font: fontBold,
-    color: brandRed,
-  });
-
-  // Top Divider line
-  y -= 16;
-  page.drawLine({
-    start: { x: 50, y },
-    end: { x: width - 50, y },
-    thickness: 1.5,
-    color: brandRed,
-  });
-
-  // 2. Customer & Fulfillment Info Box
-  y -= 25;
-  const infoBoxY = y;
-
-  // Left Column: Customer details
-  page.drawText("BILLED TO:", {
-    x: 50,
-    y: infoBoxY,
-    size: 9,
-    font: fontBold,
-    color: mediumGray,
-  });
-  page.drawText(order.customer.name || "Customer", {
-    x: 50,
-    y: infoBoxY - 14,
-    size: 11,
-    font: fontBold,
-    color: darkGray,
-  });
-  page.drawText(`Phone: ${order.customer.phone || "N/A"}`, {
-    x: 50,
-    y: infoBoxY - 28,
-    size: 9,
-    font: fontRegular,
-    color: darkGray,
-  });
-  if (order.customer.email) {
-    page.drawText(`Email: ${order.customer.email}`, {
-      x: 50,
-      y: infoBoxY - 40,
-      size: 9,
-      font: fontRegular,
-      color: darkGray,
-    });
+  if (order.dispatchSlot?.label) {
+    const slotStr = `Slot: ${order.dispatchDate ? `${order.dispatchDate} ` : ""}${order.dispatchSlot.label}`;
+    for (const l of wrapText(slotStr, COLS)) {
+      lines.push({ text: l });
+    }
   }
 
-  // Right Column: Delivery / Fulfillment details
-  const isPickup = order.orderType === "pickup";
-  const fulfillmentX = width / 2 + 20;
+  const addrPrefix = isPickup
+    ? "Pickup: Metropolis Rivera, Shop 10"
+    : `Address: ${order.deliveryAddress?.borzoFormat?.address || order.deliveryAddress?.street || "Thane, Maharashtra"}`;
+  for (const l of wrapText(addrPrefix, COLS)) {
+    lines.push({ text: l });
+  }
 
-  page.drawText("FULFILLMENT & DISPATCH:", {
-    x: fulfillmentX,
-    y: infoBoxY,
-    size: 9,
-    font: fontBold,
-    color: mediumGray,
+  const note = order.deliveryAddress?.borzoFormat?.note || order.deliveryAddress?.landmark;
+  if (note) {
+    for (const l of wrapText(`Note: ${note}`, COLS)) {
+      lines.push({ text: l });
+    }
+  }
+
+  lines.push(divider);
+
+  // 3. Item Breakdown Table
+  lines.push({
+    left: "Item",
+    right: "Price Qty Total",
+    bold: true,
   });
-
-  page.drawText(isPickup ? "Mode: Kitchen Pickup (Takeaway)" : "Mode: Doorstep Delivery (Mumbai / Thane)", {
-    x: fulfillmentX,
-    y: infoBoxY - 14,
-    size: 10,
-    font: fontBold,
-    color: darkGray,
-  });
-
-  const slotText = `Slot: ${order.dispatchDate || ""} (${order.dispatchSlot?.label || "Scheduled"})`;
-  page.drawText(slotText, {
-    x: fulfillmentX,
-    y: infoBoxY - 28,
-    size: 9,
-    font: fontRegular,
-    color: darkGray,
-  });
-
-  const addressText = isPickup
-    ? "Pickup at: Metropolis Rivera, Shop No 10, Kasarvadavali"
-    : `Address: ${order.deliveryAddress?.street || order.deliveryAddress?.borzoFormat?.address || "Delivery Address"}`;
-
-  page.drawText(addressText.slice(0, 52), {
-    x: fulfillmentX,
-    y: infoBoxY - 40,
-    size: 8.5,
-    font: fontRegular,
-    color: mediumGray,
-  });
-
-  y = infoBoxY - 60;
-
-  // 3. Itemized Table
-  // Header Row
-  page.drawRectangle({
-    x: 50,
-    y: y - 6,
-    width: width - 100,
-    height: 22,
-    color: lightGray,
-  });
-
-  page.drawText("ITEM DESCRIPTION", { x: 60, y: y, size: 9, font: fontBold, color: darkGray });
-  page.drawText("QTY", { x: 340, y: y, size: 9, font: fontBold, color: darkGray });
-  page.drawText("PRICE", { x: 410, y: y, size: 9, font: fontBold, color: darkGray });
-  page.drawText("AMOUNT", { x: 495, y: y, size: 9, font: fontBold, color: darkGray });
-
-  y -= 20;
 
   for (const item of order.items) {
-    page.drawText(item.productName, {
-      x: 60,
-      y,
-      size: 9.5,
-      font: fontBold,
-      color: darkGray,
-    });
-    page.drawText(String(item.quantity), {
-      x: 345,
-      y,
-      size: 9.5,
-      font: fontRegular,
-      color: darkGray,
-    });
-    page.drawText(`INR ${item.price}`, {
-      x: 410,
-      y,
-      size: 9.5,
-      font: fontRegular,
-      color: darkGray,
-    });
-    page.drawText(`INR ${item.subtotal}`, {
-      x: 495,
-      y,
-      size: 9.5,
-      font: fontBold,
-      color: darkGray,
-    });
+    const priceStr = String(item.price).padStart(5);
+    const qtyStr = String(item.quantity).padStart(3);
+    const totalStr = String(item.subtotal).padStart(6);
+    const colRight = `${priceStr} ${qtyStr} ${totalStr}`;
 
-    y -= 14;
-
-    // Attached Add-ons
-    if (item.addons && item.addons.length > 0) {
-      for (const addon of item.addons) {
-        page.drawText(`+ ${addon.name} (x${addon.quantity})`, {
-          x: 75,
-          y,
-          size: 8.5,
-          font: fontRegular,
-          color: mediumGray,
-        });
-        page.drawText(`INR ${addon.subtotal}`, {
-          x: 495,
-          y,
-          size: 8.5,
-          font: fontRegular,
-          color: mediumGray,
-        });
-        y -= 12;
+    const maxItemNameLen = COLS - colRight.length - 1;
+    if (item.productName.length <= maxItemNameLen) {
+      lines.push({
+        left: item.productName,
+        right: colRight,
+      });
+    } else {
+      const itemWrapped = wrapText(item.productName, maxItemNameLen);
+      lines.push({
+        left: itemWrapped[0] ?? item.productName,
+        right: colRight,
+      });
+      for (let i = 1; i < itemWrapped.length; i++) {
+        lines.push({ text: `  ${itemWrapped[i]}` });
       }
     }
 
-    // Row divider line
-    page.drawLine({
-      start: { x: 50, y: y + 4 },
-      end: { x: width - 50, y: y + 4 },
-      thickness: 0.5,
-      color: lineGray,
-    });
-    y -= 6;
+    if (item.addons && item.addons.length > 0) {
+      for (const add of item.addons) {
+        const addInfo = `+ ${add.name} (${add.quantity}x @ ${add.price})`;
+        const addTotal = String(add.subtotal);
+        if (addInfo.length + addTotal.length + 1 <= COLS) {
+          lines.push({ left: `  ${addInfo}`, right: addTotal });
+        } else {
+          lines.push({ text: `  ${addInfo}` });
+          lines.push({ right: addTotal });
+        }
+      }
+    }
   }
 
-  // 4. Totals Summary
-  y -= 10;
-  const totalsX = width - 220;
+  lines.push(divider);
 
-  page.drawText("Subtotal:", { x: totalsX, y, size: 9.5, font: fontRegular, color: mediumGray });
-  page.drawText(`INR ${order.itemTotal}`, { x: width - 80, y, size: 9.5, font: fontRegular, color: darkGray });
-
-  y -= 14;
-  page.drawText("Delivery Charges:", { x: totalsX, y, size: 9.5, font: fontRegular, color: mediumGray });
-  page.drawText(order.deliveryFee > 0 ? `INR ${order.deliveryFee}` : "FREE", {
-    x: width - 80,
-    y,
-    size: 9.5,
-    font: fontRegular,
-    color: darkGray,
+  // 4. Totals
+  lines.push({
+    left: "Sub-Total:",
+    right: `INR ${order.itemTotal}`,
+  });
+  lines.push({
+    left: isPickup ? "Fulfillment:" : "Delivery Fee:",
+    right: isPickup ? "Free" : order.deliveryFee > 0 ? `INR ${order.deliveryFee}` : "Free",
   });
 
   if (order.discount > 0) {
-    y -= 14;
-    page.drawText("Discount:", { x: totalsX, y, size: 9.5, font: fontRegular, color: mediumGray });
-    page.drawText(`-INR ${order.discount}`, { x: width - 80, y, size: 9.5, font: fontRegular, color: darkGray });
+    lines.push({
+      left: "Discount:",
+      right: `-INR ${order.discount}`,
+    });
   }
 
-  y -= 16;
-  page.drawLine({
-    start: { x: totalsX - 10, y: y + 10 },
-    end: { x: width - 50, y: y + 10 },
-    thickness: 1,
-    color: lineGray,
+  const paymentMode = order.payment?.provider ? order.payment.provider.toUpperCase() : "ONLINE";
+  lines.push({
+    left: `Mode: ${paymentMode === "RAZORPAY" ? "Online" : paymentMode}`,
+    right: `Total: INR ${order.totalAmount}`,
+    bold: true,
   });
 
-  page.drawText("TOTAL PAID:", {
-    x: totalsX,
-    y,
-    size: 11,
-    font: fontBold,
-    color: brandRed,
-  });
-  page.drawText(`INR ${order.totalAmount}`, {
-    x: width - 80,
-    y,
-    size: 12,
-    font: fontBold,
-    color: brandRed,
-  });
+  lines.push(divider);
 
-  // Payment method note
-  y -= 16;
-  const paymentMode = `Payment: Online Razorpay (${order.payment?.razorpayPaymentId || "Paid"})`;
-  page.drawText(paymentMode, {
-    x: totalsX,
-    y,
-    size: 8,
-    font: fontRegular,
-    color: mediumGray,
-  });
+  // 5. Footer
+  lines.push({ text: "** SAVE PAPER SAVE NATURE **", bold: true, align: "center" });
+  lines.push({ text: `Time: ${formattedTime}`, align: "center" });
+  lines.push(divider);
 
-  // 5. Bottom Compliance Disclaimer & Thank you
-  const footerY = 60;
-  page.drawLine({
-    start: { x: 50, y: footerY + 25 },
-    end: { x: width - 50, y: footerY + 25 },
-    thickness: 0.8,
-    color: lineGray,
-  });
+  // Layout calculation
+  const totalHeight = lines.length * LINE_HEIGHT + 32;
+  const page = pdfDoc.addPage([PAGE_WIDTH, totalHeight]);
+  const textColor = rgb(0, 0, 0);
 
-  page.drawText("Thank you for ordering authentic Himalayan delicacies with Nepali Tales!", {
-    x: 50,
-    y: footerY + 12,
-    size: 9,
-    font: fontBold,
-    color: darkGray,
-  });
+  let y = totalHeight - 18;
 
-  const disclaimerText = "* Disclaimer: All dishes are freshly prepared on a 1-day advance pre-order schedule. Dishes contain Monosodium Glutamate (MSG) in balanced culinary proportions for authentic taste.";
-  page.drawText(disclaimerText, {
-    x: 50,
-    y: footerY,
-    size: 7.5,
-    font: fontRegular,
-    color: mediumGray,
-  });
+  for (const l of lines) {
+    const f = l.bold ? fontBold : font;
+
+    if (l.left !== undefined && l.right !== undefined) {
+      page.drawText(l.left, {
+        x: MARGIN_LEFT,
+        y,
+        size: FONT_SIZE,
+        font: f,
+        color: textColor,
+      });
+
+      const rightWidth = f.widthOfTextAtSize(l.right, FONT_SIZE);
+      page.drawText(l.right, {
+        x: PAGE_WIDTH - MARGIN_LEFT - rightWidth,
+        y,
+        size: FONT_SIZE,
+        font: f,
+        color: textColor,
+      });
+    } else if (l.right !== undefined) {
+      const rightWidth = f.widthOfTextAtSize(l.right, FONT_SIZE);
+      page.drawText(l.right, {
+        x: PAGE_WIDTH - MARGIN_LEFT - rightWidth,
+        y,
+        size: FONT_SIZE,
+        font: f,
+        color: textColor,
+      });
+    } else {
+      const str = l.text || "";
+      let x = MARGIN_LEFT;
+      if (l.align === "center") {
+        const textWidth = f.widthOfTextAtSize(str, FONT_SIZE);
+        x = Math.max(MARGIN_LEFT, (PAGE_WIDTH - textWidth) / 2);
+      } else if (l.align === "right") {
+        const textWidth = f.widthOfTextAtSize(str, FONT_SIZE);
+        x = PAGE_WIDTH - MARGIN_LEFT - textWidth;
+      }
+      page.drawText(str, {
+        x,
+        y,
+        size: FONT_SIZE,
+        font: f,
+        color: textColor,
+      });
+    }
+
+    y -= LINE_HEIGHT;
+  }
 
   return await pdfDoc.save();
 }
