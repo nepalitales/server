@@ -784,17 +784,16 @@ clientOrderRoutes.post("/:orderId/cancel", async (c) => {
 
     const updated = await ordersCol.findOne({ id: orderId });
 
-    // Send cancellation & refund email notice via Resend
-    if (order.customer?.email) {
-      sendOrderStatusEmail({
-        order,
-        status: "cancelled_by_customer",
-        note: "Cancelled by customer before ordering window closed. Full refund initiated.",
-        apiKey: c.env.RESEND_API_KEY,
-        fromEmail: c.env.RESEND_FROM_EMAIL,
-        isDevelopment: isDev,
-      }).catch((e) => console.error("Failed to send cancellation email:", e));
-    }
+    // Send cancellation & refund email notice via Resend to customer and kitchen admin
+    sendOrderStatusEmail({
+      order: updated || order,
+      status: "cancelled_by_customer",
+      note: "Cancelled by customer before ordering window closed. Full refund initiated.",
+      apiKey: c.env.RESEND_API_KEY,
+      fromEmail: c.env.RESEND_FROM_EMAIL,
+      adminEmail: c.env.ADMIN_NOTIFICATION_EMAIL,
+      isDevelopment: isDev,
+    }).catch((e) => console.error("Failed to send cancellation email:", e));
 
     // Broadcast SSE update to Admin Dashboard
     await recordOrderEvent(db, {

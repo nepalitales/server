@@ -970,17 +970,16 @@ adminOrderRoutes.post("/:orderId/cancel", async (c) => {
 
     const updated = await ordersCol.findOne({ id: orderId });
 
-    // Send cancellation notice to customer via Resend
-    if (order.customer?.email) {
-      sendOrderStatusEmail({
-        order,
-        status: "cancelled_by_admin",
-        note: `Order cancelled by kitchen. Reason: ${reason}. Refund: ₹${effectiveRefundAmount}`,
-        apiKey: c.env.RESEND_API_KEY,
-        fromEmail: c.env.RESEND_FROM_EMAIL,
-        isDevelopment: isDev,
-      }).catch((e) => console.error("Failed to send admin cancellation email:", e));
-    }
+    // Send cancellation notice to customer and kitchen admin via Resend
+    sendOrderStatusEmail({
+      order: updated || order,
+      status: "cancelled_by_admin",
+      note: `Order cancelled by kitchen. Reason: ${reason}. Refund: ₹${effectiveRefundAmount}`,
+      apiKey: c.env.RESEND_API_KEY,
+      fromEmail: c.env.RESEND_FROM_EMAIL,
+      adminEmail: c.env.ADMIN_NOTIFICATION_EMAIL,
+      isDevelopment: isDev,
+    }).catch((e) => console.error("Failed to send admin cancellation email:", e));
 
     await recordOrderEvent(db, {
       type: "order_cancelled",

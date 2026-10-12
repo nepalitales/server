@@ -413,22 +413,15 @@ export interface SendOrderStatusEmailOptions {
   note?: string;
   apiKey?: string;
   fromEmail?: string;
+  adminEmail?: string;
   isDevelopment?: boolean;
 }
 
 export async function sendOrderStatusEmail(
   options: SendOrderStatusEmailOptions,
 ): Promise<SendEmailResult> {
-  const { order, status, trackingUrl, note, apiKey, fromEmail, isDevelopment } = options;
+  const { order, status, trackingUrl, note, apiKey, fromEmail, adminEmail, isDevelopment } = options;
   const customerEmail = order.customer?.email;
-
-  if (!customerEmail) {
-    return {
-      success: true,
-      provider: "dev_simulated",
-      error: "No customer email available",
-    };
-  }
 
   let statusTitle = "Order Status Updated";
   let statusBadge = "Update";
@@ -475,13 +468,21 @@ export async function sendOrderStatusEmail(
       break;
 
     case "cancelled_by_customer":
+      statusTitle = "Order Cancelled & Refund Initiated";
+      statusBadge = "Cancelled";
+      statusColor = "#dc2626";
+      message = `Your order #${order.orderNumber} has been cancelled per your request before kitchen preparation started. A full refund of ₹${order.totalAmount} has been initiated to your original payment method via Razorpay.`;
+      break;
+
     case "cancelled_by_admin":
       statusTitle = "Order Cancelled & Refund Initiated";
       statusBadge = "Cancelled";
       statusColor = "#dc2626";
-      message = `Your order #${order.orderNumber} has been cancelled. If payment was collected, a refund of ₹${order.totalAmount} has been initiated to your original payment method.`;
+      message = `Your order #${order.orderNumber} has been cancelled by our kitchen team. ${note ? note : `A full refund of ₹${order.totalAmount} has been initiated to your original payment method via Razorpay.`}`;
       break;
   }
+
+  const isCancelled = status === "cancelled_by_customer" || status === "cancelled_by_admin";
 
   const trackingButtonHtml = trackingUrl
     ? `
@@ -491,6 +492,17 @@ export async function sendOrderStatusEmail(
       </a>
     </div>
   `
+    : "";
+
+  const itemsSummaryHtml = order.items && order.items.length > 0
+    ? `
+      <div style="margin-top: 16px; border-top: 1px solid #e5e7eb; padding-top: 12px;">
+        <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px;">Items in this Order</p>
+        <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #374151; line-height: 20px;">
+          ${order.items.map((i) => `<li><strong>${i.productName}</strong> × ${i.quantity} (₹${i.subtotal})</li>`).join("")}
+        </ul>
+      </div>
+    `
     : "";
 
   const subject = `${statusTitle} - Order #${order.orderNumber}`;
@@ -524,14 +536,18 @@ export async function sendOrderStatusEmail(
                 ${message}
               </p>
 
-              ${note ? `<p style="margin: 0 0 16px 0; font-size: 14px; color: #6b7280; font-style: italic;">"${note}"</p>` : ""}
+              ${note && !isCancelled ? `<p style="margin: 0 0 16px 0; font-size: 14px; color: #6b7280; font-style: italic;">"${note}"</p>` : ""}
 
               ${trackingButtonHtml}
 
               <div style="background-color: #f9fafb; border-radius: 10px; padding: 14px 16px; border: 1px solid #f3f4f6; margin-top: 20px;">
                 <p style="margin: 0 0 4px 0; font-size: 13px; color: #6b7280;">${(order.orderType || "delivery") === "pickup" ? "Pickup at Kitchen:" : "Delivering to:"}</p>
                 <p style="margin: 0; font-size: 14px; font-weight: 600; color: #111827;">${(order.orderType || "delivery") === "pickup" ? "Metropolis Riveria, Kasarvadavali, Thane" : (order.deliveryAddress?.street || order.deliveryAddress?.borzoFormat?.address || "Thane, Maharashtra")}</p>
+                <p style="margin: 6px 0 0 0; font-size: 12px; color: #6b7280;">Scheduled Slot: <strong>${order.dispatchDate || ""} (${order.dispatchSlot?.label || "Scheduled"})</strong></p>
+                <p style="margin: 2px 0 0 0; font-size: 12px; color: #6b7280;">Total Amount: <strong>₹${order.totalAmount}</strong></p>
               </div>
+
+              ${itemsSummaryHtml}
             </td>
           </tr>
 
@@ -549,13 +565,104 @@ export async function sendOrderStatusEmail(
 </html>
   `.trim();
 
-  return sendEmail({
-    to: customerEmail,
-    subject,
-    html,
-    text,
-    apiKey,
-    from: fromEmail,
-    isDevelopment,
-  });
+  // 1. Send update/cancellation notice to customer
+  let customerSendResult: SendEmailResult = {
+    success: true,
+    provider: apiKey ? "resend" : "dev_simulated",
+  };
+
+  if (customerEmail) {
+    customerSendResult = await sendEmail({
+      to: customerEmail,
+      subject,
+      html,
+      text,
+      apiKey,
+      from: fromEmail,
+      isDevelopment,
+    });
+  }
+
+  // 2. When an order is cancelled, notify Kitchen Admin so chefs do NOT prepare or dispatch it
+  if (isCancelled && adminEmail) {
+    const cancelSource = status === "cancelled_by_customer" ? "Customer" : "Kitchen Admin";
+    const adminSubject = `[Kitchen Alert] Order #${order.orderNumber} Cancelled (${cancelSource}) - Nepali Tales`;
+    const adminText = `[KITCHEN ALERT] Order #${order.orderNumber} has been cancelled by ${cancelSource}.\n\n` +
+      `DO NOT PREPARE OR DISPATCH THIS ORDER.\n\n` +
+      `Customer: ${order.customer.name} (${order.customer.phone || "No phone"})\n` +
+      `Scheduled Date/Slot: ${order.dispatchDate || ""} ${order.dispatchSlot?.label || ""}\n` +
+      `Fulfillment: ${(order.orderType || "delivery").toUpperCase()}\n` +
+      `Refund: Full refund of ₹${order.totalAmount} initiated via Razorpay.\n` +
+      `Items: ${(order.items || []).map((i) => `${i.productName} x${i.quantity}`).join(", ")}\n`;
+
+    const adminHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${adminSubject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f7f7f8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1f2937;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 36px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 520px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06); border: 2px solid #ef4444;">
+          
+          <tr style="background-color: #dc2626;">
+            <td style="padding: 24px; text-align: center;">
+              <span style="display: inline-block; background-color: rgba(255,255,255,0.25); color: #ffffff; padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">Kitchen Alert</span>
+              <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: #ffffff;">Order #${order.orderNumber} Cancelled</h1>
+              <p style="margin: 6px 0 0 0; font-size: 14px; color: #fee2e2;">Cancelled by ${cancelSource}</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 28px 24px;">
+              <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px;">
+                <p style="margin: 0; font-size: 14px; font-weight: 700; color: #991b1b;">
+                  ATTENTION: DO NOT PREPARE OR DISPATCH THIS ORDER.
+                </p>
+                <p style="margin: 6px 0 0 0; font-size: 13px; color: #7f1d1d;">
+                  A full refund of ₹${order.totalAmount} has been initiated to the customer via Razorpay.
+                </p>
+              </div>
+
+              <div style="background-color: #f9fafb; border-radius: 10px; padding: 14px 16px; border: 1px solid #f3f4f6; margin-bottom: 20px; font-size: 13px;">
+                <p style="margin: 0 0 6px 0;"><strong>Customer:</strong> ${order.customer.name} (${order.customer.phone || "No phone"})</p>
+                <p style="margin: 0 0 6px 0;"><strong>Customer Email:</strong> ${order.customer.email || "N/A"}</p>
+                <p style="margin: 0 0 6px 0;"><strong>Scheduled Slot:</strong> ${order.dispatchDate || ""} (${order.dispatchSlot?.label || "Slot"})</p>
+                <p style="margin: 0 0 6px 0;"><strong>Fulfillment:</strong> ${(order.orderType || "delivery").toUpperCase()}</p>
+                <p style="margin: 0;"><strong>Address:</strong> ${(order.orderType || "delivery") === "pickup" ? "Kitchen Pickup" : (order.deliveryAddress?.street || order.deliveryAddress?.borzoFormat?.address || "Delivery Address")}</p>
+              </div>
+
+              ${itemsSummaryHtml}
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 16px 24px; background-color: #fafafa; border-top: 1px solid #f3f4f6; text-align: center; font-size: 12px; color: #9ca3af;">
+              Nepali Tales Kitchen Order Management
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+
+    await sendEmail({
+      to: adminEmail,
+      subject: adminSubject,
+      html: adminHtml,
+      text: adminText,
+      apiKey,
+      from: fromEmail,
+      isDevelopment,
+    }).catch((e) => console.error("Failed to send cancellation alert to kitchen admin:", e));
+  }
+
+  return customerSendResult;
 }
