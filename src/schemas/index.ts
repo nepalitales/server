@@ -524,6 +524,7 @@ export const adminUpdateOrderStatusSchema = z.object({
     "delivered",
   ]),
   note: z.string().max(500).optional(),
+  trackingUrl: z.string().max(500).optional(),
 });
 
 export const adminCancelOrderSchema = z

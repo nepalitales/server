@@ -863,18 +863,23 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
     }
 
     // Standard status update (preparing, out_for_delivery, delivered)
+    const updateSet: Record<string, unknown> = {
+      status: targetStatus,
+      updatedAt: now,
+    };
+    if (parsed.data.trackingUrl) {
+      updateSet["borzo.trackingUrl"] = parsed.data.trackingUrl;
+    }
+
     await ordersCol.updateOne(
       { id: orderId },
       {
-        $set: {
-          status: targetStatus,
-          updatedAt: now,
-        },
+        $set: updateSet,
         $push: {
           timeline: {
             status: targetStatus,
             timestamp: now,
-            note: note || `Status changed to ${targetStatus}`,
+            note: note || (parsed.data.trackingUrl ? `Dispatched via courier with tracking: ${parsed.data.trackingUrl}` : `Status changed to ${targetStatus}`),
           },
         } as any,
       },
@@ -885,9 +890,9 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
     // Send order status update email to customer via Resend
     if (order.customer?.email) {
       sendOrderStatusEmail({
-        order,
+        order: updated || order,
         status: targetStatus,
-        trackingUrl: order.borzo?.trackingUrl,
+        trackingUrl: parsed.data.trackingUrl || updated?.borzo?.trackingUrl || order.borzo?.trackingUrl,
         note,
         apiKey: c.env.RESEND_API_KEY,
         fromEmail: c.env.RESEND_FROM_EMAIL,
