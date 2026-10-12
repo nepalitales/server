@@ -20,6 +20,7 @@ import { formatZodErrors } from "../../utils";
 import { clientAuthMiddleware } from "../../middleware/client-auth";
 import {
   getTomorrowIstDate,
+  getNextAvailableDispatchDate,
   reserveSlotAtomically,
   confirmSlotReservation,
   releaseSlotReservation,
@@ -307,7 +308,7 @@ clientOrderRoutes.post("/", async (c) => {
     const orderId = generateId("order");
 
     const targetDispatchDate =
-      parsed.data.dispatchDate || getTomorrowIstDate().dateStr;
+      parsed.data.dispatchDate || (await getNextAvailableDispatchDate(db)).dateStr;
 
     // ATOMIC RESERVATION LOCK: Prevents race conditions during concurrent checkouts
     const reservation = await reserveSlotAtomically(db, {

@@ -62,6 +62,91 @@ export function getTomorrowIstDate(): {
 }
 
 /**
+ * Computes the next available dispatch/delivery date in Indian Standard Time (IST).
+ * Skips any weekly off days and holidays to ensure pre-orders land on an open cooking day.
+ * Works dynamically for any configured weekly off day(s) (Monday, Tuesday, etc.).
+ */
+export async function getNextAvailableDispatchDate(
+  db: Db,
+  fromDate?: Date,
+): Promise<{
+  dateStr: string; // "YYYY-MM-DD"
+  dayName: DayOfWeek;
+  displayDate: string; // e.g. "Tuesday, 13 Oct"
+}> {
+  const { now } = getIstDateTime();
+  const base = fromDate ? new Date(fromDate) : now;
+
+  // 1. Fetch weekly off, holidays, and enabled dispatch windows
+  const weeklyOffCol = db.collection<WeeklyOffDoc>(COLLECTIONS.WEEKLY_OFF);
+  const weeklyOffDoc = await weeklyOffCol.findOne({});
+  const offDays = (weeklyOffDoc?.days ?? []).map((d) => d.toLowerCase() as DayOfWeek);
+
+  const holidaysCol = db.collection<HolidayDoc>(COLLECTIONS.HOLIDAYS);
+  const holidays = await holidaysCol.find({}).toArray();
+  const holidayDates = new Set(holidays.map((h) => h.date));
+
+  const dispatchWindowsCol = db.collection<DispatchWindowDoc>(COLLECTIONS.DISPATCH_WINDOWS);
+  const allDispatchWindows = await dispatchWindowsCol.find({}).toArray();
+  const enabledDispatchDays = new Set(
+    allDispatchWindows
+      .filter((w) => w.enabled && w.slots && w.slots.length > 0)
+      .map((w) => w.day.toLowerCase() as DayOfWeek),
+  );
+
+  // 2. Start from tomorrow (+1 day in IST) and check up to 14 days ahead
+  let candidate = new Date(base.getTime() + 24 * 60 * 60 * 1000);
+  for (let i = 0; i < 14; i++) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      weekday: "long",
+    }).formatToParts(candidate);
+
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value || "";
+    const year = getPart("year");
+    const month = getPart("month");
+    const day = getPart("day");
+    const weekday = getPart("weekday").toLowerCase() as DayOfWeek;
+    const candidateDateStr = `${year}-${month}-${day}`;
+
+    const isOffDay = offDays.includes(weekday);
+    const isHoliday = holidayDates.has(candidateDateStr);
+    const hasDispatchSlots = enabledDispatchDays.has(weekday);
+
+    if (!isOffDay && !isHoliday && hasDispatchSlots) {
+      const isTomorrow = i === 0;
+      const formattedMonthDay = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Kolkata",
+        month: "short",
+        day: "numeric",
+      }).format(candidate);
+
+      const formattedWeekday = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Kolkata",
+        weekday: "short",
+      }).format(candidate);
+
+      return {
+        dateStr: candidateDateStr,
+        dayName: weekday,
+        displayDate: isTomorrow
+          ? `Tomorrow, ${formattedMonthDay}`
+          : `${formattedWeekday}, ${formattedMonthDay}`,
+      };
+    }
+
+    // Advance candidate by 1 day
+    candidate = new Date(candidate.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  // Fallback: standard tomorrow in IST
+  return getTomorrowIstDate();
+}
+
+/**
  * Derives day of week from any "YYYY-MM-DD" string in IST.
  */
 export function getDayOfWeekForDate(dateStr: string): DayOfWeek {
@@ -95,26 +180,33 @@ export interface DispatchAvailabilityResult {
 }
 
 /**
- * Retrieves available dispatch slots for a given date (defaults to tomorrow in IST).
+ * Retrieves available dispatch slots for a given date.
+ * If no targetDate is provided, automatically defaults to the next open kitchen operating day.
  * Prunes expired holds and returns real-time available capacity for each slot.
  */
 export async function getAvailableDispatchSlots(
   db: Db,
   targetDate?: string,
 ): Promise<DispatchAvailabilityResult> {
-  const tomorrow = getTomorrowIstDate();
-  const dateStr = targetDate || tomorrow.dateStr;
-  const dayName = getDayOfWeekForDate(dateStr);
+  let dateStr: string;
+  let dayName: DayOfWeek;
+  let displayDate: string;
 
-  const displayDate =
-    dateStr === tomorrow.dateStr
-      ? tomorrow.displayDate
-      : new Intl.DateTimeFormat("en-US", {
-          timeZone: "Asia/Kolkata",
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        }).format(new Date(`${dateStr}T12:00:00+05:30`));
+  if (!targetDate) {
+    const nextAvailable = await getNextAvailableDispatchDate(db);
+    dateStr = nextAvailable.dateStr;
+    dayName = nextAvailable.dayName;
+    displayDate = nextAvailable.displayDate;
+  } else {
+    dateStr = targetDate;
+    dayName = getDayOfWeekForDate(dateStr);
+    displayDate = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Kolkata",
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(`${dateStr}T12:00:00+05:30`));
+  }
 
   // 1. Check Holiday for target date
   const holidaysCol = db.collection<HolidayDoc>(COLLECTIONS.HOLIDAYS);

@@ -96,48 +96,11 @@ export async function checkOrderWindow(
 ): Promise<OrderWindowCheckResult> {
   const { dateStr, timeStr, dayName, now } = getIstDateTime();
 
-  // 1. Check Holidays
-  const holidays = db.collection<HolidayDoc>(COLLECTIONS.HOLIDAYS);
-  const holiday = await holidays.findOne({ date: dateStr });
+  // In Nepali Tales' advance pre-order model, customers can place orders on any day
+  // (including kitchen weekly off days) within the day's configured ordering window,
+  // with delivery scheduled for the next open cooking/dispatch operating day.
 
-  if (holiday) {
-    if (allowDevBypass) {
-      console.warn(`[OrderWindow Dev Bypass]: Today is holiday (${holiday.reason}), but dev bypass is active.`);
-    } else {
-      return {
-        isOpen: false,
-        message: `Kitchen is closed today for holiday: ${holiday.reason}`,
-        currentWindow: null,
-        canCancelUntil: null,
-        todayDateStr: dateStr,
-        todayDay: dayName,
-        activeWindows: [],
-      };
-    }
-  }
-
-  // 2. Check Weekly Off
-  const weeklyOff = db.collection<WeeklyOffDoc>(COLLECTIONS.WEEKLY_OFF);
-  const weeklyOffDoc = await weeklyOff.findOne({});
-  const offDays = weeklyOffDoc?.days ?? ["monday"];
-
-  if (offDays.includes(dayName)) {
-    if (allowDevBypass) {
-      console.warn(`[OrderWindow Dev Bypass]: Today is weekly off (${dayName}), but dev bypass is active.`);
-    } else {
-      return {
-        isOpen: false,
-        message: `Kitchen is closed today (Weekly Off)`,
-        currentWindow: null,
-        canCancelUntil: null,
-        todayDateStr: dateStr,
-        todayDay: dayName,
-        activeWindows: [],
-      };
-    }
-  }
-
-  // 3. Check Order Window for today
+  // Check Order Window for today
   const orderWindows = db.collection<OrderWindowDoc>(COLLECTIONS.ORDER_WINDOWS);
   const todayWindowDoc = await orderWindows.findOne({ day: dayName });
 
