@@ -163,12 +163,14 @@ async function seed() {
     await db.collection("orders").createIndex({ "customer.phone": 1 });
     await db.collection("orders").createIndex({ dispatchDate: 1, "dispatchSlot.id": 1 });
 
-    // Order Events indexes (for live SSE & change log)
-    await db.collection("order_events").createIndex({ createdAt: -1 });
+    // Order Events indexes (for live summary polling & change log)
+    await db.collection("order_events").createIndex({ timestamp: 1 });
     await db.collection("order_events").createIndex({ orderId: 1 });
 
-    // Dispatch Windows indexes
+    // Dispatch Windows & Slot Buckets indexes
     await db.collection("dispatch_windows").createIndex({ day: 1 }, { unique: true });
+    await db.collection("dispatch_slot_buckets").createIndex({ date: 1 });
+    await db.collection("dispatch_slot_buckets").createIndex({ date: 1, slotId: 1 });
 
     // Add-on indexes (images stored in Cloudinary; metadata in MongoDB)
     await db.collection("addons").createIndex({ id: 1 }, { unique: true });

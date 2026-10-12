@@ -40,32 +40,34 @@ export async function autoTransitionOrdersToPreparing(db: Db): Promise<number> {
 
   if (expiredPlacedOrders.length === 0) return 0;
 
-  for (const order of expiredPlacedOrders) {
-    await ordersCol.updateOne(
-      { id: order.id },
-      {
-        $set: {
-          status: "preparing",
-          updatedAt: now,
-        },
-        $push: {
-          timeline: {
+  await Promise.all(
+    expiredPlacedOrders.map(async (order) => {
+      await ordersCol.updateOne(
+        { id: order.id },
+        {
+          $set: {
             status: "preparing",
-            timestamp: now,
-            note: "Order window closed. Order automatically moved to kitchen preparation.",
+            updatedAt: now,
           },
-        } as any,
-      },
-    );
+          $push: {
+            timeline: {
+              status: "preparing",
+              timestamp: now,
+              note: "Order window closed. Order automatically moved to kitchen preparation.",
+            },
+          } as any,
+        },
+      );
 
-    await recordOrderEvent(db, {
-      type: "order_status_updated",
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      status: "preparing",
-      summary: { autoTransition: true, reason: "Order window closed" },
-    });
-  }
+      await recordOrderEvent(db, {
+        type: "order_status_updated",
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: "preparing",
+        summary: { autoTransition: true, reason: "Order window closed" },
+      });
+    }),
+  );
 
   return expiredPlacedOrders.length;
 }
