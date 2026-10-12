@@ -340,12 +340,12 @@ export async function sendOrderConfirmationEmail(
                   <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Item Total</td>
                   <td align="right" style="padding: 4px 0; font-size: 13px; color: #1f2937;">₹${order.itemTotal}</td>
                 </tr>
-                ${order.deliveryFee > 0 ? `<tr>
-                  <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Delivery Fee</td>
-                  <td align="right" style="padding: 4px 0; font-size: 13px; color: #1f2937;">₹${order.deliveryFee}</td>
+                ${isPickup ? `<tr>
+                  <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Fulfillment</td>
+                  <td align="right" style="padding: 4px 0; font-size: 13px; color: #15803d;">Self-Pickup (Free)</td>
                 </tr>` : `<tr>
-                  <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Pickup</td>
-                  <td align="right" style="padding: 4px 0; font-size: 13px; color: #15803d;">Free</td>
+                  <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Delivery Fee</td>
+                  <td align="right" style="padding: 4px 0; font-size: 13px; color: #1f2937;">${order.deliveryFee > 0 ? `₹${order.deliveryFee}` : "As per Borzo/Porter service"}</td>
                 </tr>`}
                 <tr>
                   <td style="padding: 8px 0 0 0; font-size: 15px; font-weight: 700; color: #111827; border-top: 1px solid #e5e7eb;">Total Paid</td>

@@ -164,10 +164,17 @@ export async function generateOrderInvoicePdf(order: OrderDoc): Promise<Uint8Arr
     left: "Sub-Total:",
     right: `INR ${order.itemTotal}`,
   });
-  lines.push({
-    left: isPickup ? "Fulfillment:" : "Delivery Fee:",
-    right: isPickup ? "Free" : order.deliveryFee > 0 ? `INR ${order.deliveryFee}` : "Free",
-  });
+  if (isPickup) {
+    lines.push({
+      left: "Fulfillment:",
+      right: "Self-Pickup (Free)",
+    });
+  } else {
+    lines.push({
+      left: "Delivery Fee:",
+      right: order.deliveryFee > 0 ? `INR ${order.deliveryFee}` : "As per Borzo/Porter",
+    });
+  }
 
   if (order.discount > 0) {
     lines.push({
@@ -186,6 +193,9 @@ export async function generateOrderInvoicePdf(order: OrderDoc): Promise<Uint8Arr
   lines.push(divider);
 
   // 5. Footer
+  if (!isPickup) {
+    lines.push({ text: "* Delivery as per Borzo/Porter service", align: "center" });
+  }
   lines.push({ text: "** SAVE PAPER SAVE NATURE **", bold: true, align: "center" });
   lines.push({ text: `Time: ${formattedTime}`, align: "center" });
   lines.push(divider);
