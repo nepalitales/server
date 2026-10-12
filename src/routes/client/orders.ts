@@ -14,6 +14,7 @@ import {
   sendOrderConfirmationEmail,
   sendOrderStatusEmail,
 } from "../../lib/email";
+import { generateOrderInvoicePdf } from "../../lib/pdf-invoice";
 import { getOrderSettings } from "../../lib/order-settings";
 import { createOrderSchema, verifyPaymentSchema, MAX_DISHES_PER_ORDER } from "../../schemas";
 import { formatZodErrors } from "../../utils";
@@ -684,6 +685,42 @@ clientOrderRoutes.get("/:orderId", async (c) => {
   } catch (error) {
     console.error("Get customer order error:", error);
     return c.json({ success: false, message: "Internal server error" }, 500);
+  }
+});
+
+// ─── 4b. Download Customer PDF Invoice ────────────────────────────
+
+/**
+ * GET /api/client/orders/:orderId/invoice.pdf
+ *
+ * Stream official PDF invoice document for the authenticated customer.
+ */
+clientOrderRoutes.get("/:orderId/invoice.pdf", async (c) => {
+  try {
+    const orderId = c.req.param("orderId");
+    const userId = c.get("userId")!;
+    const db = c.get("db");
+
+    const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
+    const order = await ordersCol.findOne({ id: orderId, userId });
+
+    if (!order) {
+      return c.json({ success: false, message: "Order not found" }, 404);
+    }
+
+    const pdfBytes = await generateOrderInvoicePdf(order);
+
+    return new Response(pdfBytes, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="Invoice_${order.orderNumber}.pdf"`,
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  } catch (error) {
+    console.error("Generate customer invoice PDF error:", error);
+    return c.json({ success: false, message: "Failed to generate invoice PDF" }, 500);
   }
 });
 

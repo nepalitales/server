@@ -16,6 +16,7 @@ import { formatZodErrors } from "../../utils";
 import { getRedisClient, cacheGet, cacheSet, cacheDel, CACHE_KEYS } from "../../lib/redis";
 import type { Db } from "mongodb";
 import type { OrderDoc, OrderStatus } from "../../types";
+import { generateOrderInvoicePdf } from "../../lib/pdf-invoice";
 
 const adminOrderRoutes = new Hono<AppBindings>();
 
@@ -720,6 +721,40 @@ adminOrderRoutes.get("/:orderId/bill", async (c) => {
   } catch (error) {
     console.error("Admin print bill error:", error);
     return c.json({ success: false, message: "Internal server error" }, 500);
+  }
+});
+
+// ─── 6b. Download PDF Invoice ──────────────────────────────────────
+
+/**
+ * GET /api/admin/orders/:orderId/invoice.pdf
+ *
+ * Stream official PDF invoice document for download or printing.
+ */
+adminOrderRoutes.get("/:orderId/invoice.pdf", async (c) => {
+  try {
+    const orderId = c.req.param("orderId");
+    const db = c.get("db");
+    const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
+
+    const order = await ordersCol.findOne({ id: orderId });
+    if (!order) {
+      return c.json({ success: false, message: "Order not found" }, 404);
+    }
+
+    const pdfBytes = await generateOrderInvoicePdf(order);
+
+    return new Response(pdfBytes, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="Invoice_${order.orderNumber}.pdf"`,
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  } catch (error) {
+    console.error("Generate invoice PDF error:", error);
+    return c.json({ success: false, message: "Failed to generate invoice PDF" }, 500);
   }
 });
 

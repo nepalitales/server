@@ -13,6 +13,12 @@
  */
 
 import type { OrderDoc, OrderStatus } from "../types";
+import { generateOrderInvoicePdf, uint8ArrayToBase64 } from "./pdf-invoice";
+
+export interface EmailAttachment {
+  filename: string;
+  content: string; // base64 encoded
+}
 
 export interface SendEmailOptions {
   to: string | string[];
@@ -22,6 +28,7 @@ export interface SendEmailOptions {
   apiKey?: string;
   from?: string;
   isDevelopment?: boolean;
+  attachments?: EmailAttachment[];
 }
 
 export interface SendEmailResult {
@@ -35,7 +42,7 @@ export interface SendEmailResult {
  * Base email sender utilizing the Resend REST API (Cloudflare Workers native fetch).
  */
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
-  const { to, subject, html, text, apiKey, from, isDevelopment } = options;
+  const { to, subject, html, text, apiKey, from, isDevelopment, attachments } = options;
   const recipients = Array.isArray(to) ? to : [to];
   const fromAddress = from || "Nepali Tales <orders@nepalitales.com>";
 
@@ -44,11 +51,12 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     console.log(
       `\n--------------------------------------------------\n` +
       `[Resend Email Simulator]\n` +
-      `From    : ${fromAddress}\n` +
-      `To      : ${recipients.join(", ")}\n` +
-      `Subject : ${subject}\n` +
-      `Text    : ${text || "(HTML only content)"}\n` +
-      `Status  : Simulated (RESEND_API_KEY not configured)\n` +
+      `From        : ${fromAddress}\n` +
+      `To          : ${recipients.join(", ")}\n` +
+      `Subject     : ${subject}\n` +
+      `Attachments : ${attachments?.length ? attachments.map((a) => a.filename).join(", ") : "None"}\n` +
+      `Text        : ${text || "(HTML only content)"}\n` +
+      `Status      : Simulated (RESEND_API_KEY not configured)\n` +
       `--------------------------------------------------\n`,
     );
     return {
@@ -71,6 +79,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
         subject,
         html,
         text,
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
       }),
     });
 
@@ -371,7 +380,22 @@ export async function sendOrderConfirmationEmail(
 </html>
   `.trim();
 
-  // 1. Send confirmation to customer if email is provided
+  // Generate official itemized PDF invoice attachment
+  let attachments: EmailAttachment[] | undefined;
+  try {
+    const pdfBytes = await generateOrderInvoicePdf(order);
+    const base64Pdf = uint8ArrayToBase64(pdfBytes);
+    attachments = [
+      {
+        filename: `Invoice_${order.orderNumber}.pdf`,
+        content: base64Pdf,
+      },
+    ];
+  } catch (pdfErr) {
+    console.error("[Resend] Failed to generate PDF invoice attachment:", pdfErr);
+  }
+
+  // 1. Send confirmation to customer if email is provided (with invoice PDF attached)
   if (customerEmail) {
     await sendEmail({
       to: customerEmail,
@@ -381,10 +405,11 @@ export async function sendOrderConfirmationEmail(
       apiKey,
       from: fromEmail,
       isDevelopment,
+      attachments,
     });
   }
 
-  // 2. Send notification to Kitchen Admin if configured
+  // 2. Send notification to Kitchen Admin if configured (with invoice PDF attached)
   if (adminEmail && adminEmail !== customerEmail) {
     const adminSubject = `New Kitchen Order: #${order.orderNumber} (₹${order.totalAmount}) - ${order.customer.name}`;
     await sendEmail({
@@ -395,6 +420,7 @@ export async function sendOrderConfirmationEmail(
       apiKey,
       from: fromEmail,
       isDevelopment,
+      attachments,
     }).catch((e) => console.error("Failed to notify kitchen admin email:", e));
   }
 
