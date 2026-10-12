@@ -4,6 +4,11 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
+routes = [
+  { pattern = "api.nepalitales.com", custom_domain = true }
+]
+workers_dev = true
+
 [alias]
 whatwg-url = "./src/shims/whatwg-url.ts"
 
