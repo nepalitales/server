@@ -670,16 +670,19 @@ adminOrderRoutes.get("/:orderId/bill", async (c) => {
     const bill = {
       restaurant: {
         name: "Nepali Tales",
-        tagline: "Authentic Nepali Momo & Artisanal Chilli Oil",
-        address: c.env.KITCHEN_ADDRESS,
-        phone: c.env.KITCHEN_PHONE,
+        tagline: "Authentic Himalayan Delicacies",
+        address: c.env.KITCHEN_ADDRESS || "Metropolis Rivera, Shop No 10, Kasarvadavali, Opp to Laxmi Narayan Mandir, 400615",
+        phone: c.env.KITCHEN_PHONE || "917678097659",
       },
       order: {
         orderNumber: order.orderNumber,
+        invoiceNumber: order.orderNumber,
         orderId: order.id,
         date: order.createdAt,
         status: order.status,
         orderType: order.orderType || "delivery",
+        dispatchDate: order.dispatchDate,
+        dispatchSlot: order.dispatchSlot?.label,
       },
       customer: {
         name: order.customer.name,
@@ -693,6 +696,12 @@ adminOrderRoutes.get("/:orderId/bill", async (c) => {
         price: i.price,
         quantity: i.quantity,
         total: i.subtotal,
+        addons: i.addons?.map((a) => ({
+          name: a.name,
+          price: a.price,
+          quantity: a.quantity,
+          total: a.subtotal,
+        })),
       })),
       totals: {
         subtotal: order.itemTotal,

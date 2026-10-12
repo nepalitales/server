@@ -17,7 +17,7 @@ enabled = false
 [vars]
 NODE_ENV = "production"
 MONGODB_DB_NAME = "nepali-tales"
-KITCHEN_ADDRESS = "Metropolis Riveria, Kasarvadavali, Ghodbunder Road, Thane, Maharashtra 400615"
+KITCHEN_ADDRESS = "Metropolis Rivera, Shop No 10, Kasarvadavali, Opp to Laxmi Narayan Mandir, 400615"
 KITCHEN_PHONE = "917678097659"
 
 # Upstash Redis Cache & Rate Limiting

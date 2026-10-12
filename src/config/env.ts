@@ -40,7 +40,7 @@ export const envSchema = z.object({
   KITCHEN_ADDRESS: z
     .string()
     .default(
-      "Metropolis Riveria, Kasarvadavali, Ghodbunder Road, Thane, Maharashtra 400615",
+      "Metropolis Rivera, Shop No 10, Kasarvadavali, Opp to Laxmi Narayan Mandir, 400615",
     ),
   KITCHEN_PHONE: z.string().default("917678097659"),
 
