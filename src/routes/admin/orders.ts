@@ -673,7 +673,7 @@ adminOrderRoutes.get("/:orderId/bill", async (c) => {
     const bill = {
       restaurant: {
         name: "Nepali Tales",
-        tagline: "Authentic Himalayan Delicacies",
+        tagline: "Authentic Nepali Delicacies",
         address: c.env.KITCHEN_ADDRESS || "Metropolis Rivera, Shop No 10, Kasarvadavali, Opp to Laxmi Narayan Mandir, 400615",
         phone: c.env.KITCHEN_PHONE || "917678097659",
       },
