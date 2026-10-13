@@ -593,7 +593,7 @@ clientOrderRoutes.post("/verify-payment", async (c) => {
     const updatedOrder = await ordersCol.findOne({ id: orderId });
 
     // Send itemized order confirmation email via Resend
-    sendOrderConfirmationEmail({
+    await sendOrderConfirmationEmail({
       order: updatedOrder || order,
       apiKey: c.env.RESEND_API_KEY,
       fromEmail: c.env.RESEND_FROM_EMAIL,

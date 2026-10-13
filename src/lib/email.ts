@@ -236,12 +236,15 @@ export async function sendOrderConfirmationEmail(
   const { order, apiKey, fromEmail, adminEmail, isDevelopment } = options;
 
   const customerEmail = order.customer?.email;
-  const formattedCancelTime = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).format(new Date(order.canCustomerCancelUntil));
+  const cancelTimeRaw = order.canCustomerCancelUntil ? new Date(order.canCustomerCancelUntil) : null;
+  const formattedCancelTime = cancelTimeRaw && !isNaN(cancelTimeRaw.getTime())
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      }).format(cancelTimeRaw)
+    : "15 minutes";
 
   const itemsListHtml = order.items
     .map((item) => {
@@ -279,7 +282,11 @@ export async function sendOrderConfirmationEmail(
 
   const isPickup = (order.orderType || "delivery") === "pickup";
   const fulfillmentLabel = isPickup ? "Pickup" : "Delivery";
-  const fulfillmentAddress = order.deliveryAddress.borzoFormat.address;
+  const fulfillmentAddress =
+    order.deliveryAddress?.borzoFormat?.address ||
+    order.deliveryAddress?.addressLine1 ||
+    order.deliveryAddress?.street ||
+    "Metropolis Rivera, Kasarvadavali, Thane";
 
   const subject = `Order Confirmed: #${order.orderNumber} (₹${order.totalAmount}) - Nepali Tales`;
   const text =

@@ -830,7 +830,7 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
 
       const updated = await ordersCol.findOne({ id: orderId });
       if (order.customer?.email) {
-        sendOrderStatusEmail({
+        await sendOrderStatusEmail({
           order: updated || order,
           status: "ready",
           note,
@@ -897,7 +897,7 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
 
     // Send order status update email to customer via Resend
     if (order.customer?.email) {
-      sendOrderStatusEmail({
+      await sendOrderStatusEmail({
         order: updated || order,
         status: targetStatus,
         trackingUrl: cleanTrackingUrl || updated?.borzo?.trackingUrl || order.borzo?.trackingUrl,
@@ -1030,7 +1030,7 @@ adminOrderRoutes.post("/:orderId/cancel", async (c) => {
     const updated = await ordersCol.findOne({ id: orderId });
 
     // Send cancellation notice to customer and kitchen admin via Resend
-    sendOrderStatusEmail({
+    await sendOrderStatusEmail({
       order: updated || order,
       status: "cancelled_by_admin",
       note: `Order cancelled by kitchen. Reason: ${reason}. Refund: ₹${effectiveRefundAmount}`,

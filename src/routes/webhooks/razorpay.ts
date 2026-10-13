@@ -87,7 +87,7 @@ razorpayWebhookRoutes.post("/", async (c) => {
         }
 
         // Send itemized order confirmation email via Resend
-        sendOrderConfirmationEmail({
+        await sendOrderConfirmationEmail({
           order,
           apiKey: c.env.RESEND_API_KEY,
           fromEmail: c.env.RESEND_FROM_EMAIL,
