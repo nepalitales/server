@@ -83,6 +83,21 @@ export function getIstDateForTime(hhMm: string, dateStr: string): Date {
 }
 
 /**
+ * Formats a "HH:mm" time string into 12-hour format with AM/PM (e.g. "02:00 PM").
+ */
+export function formatTime12(timeStr: string): string {
+  if (!timeStr) return "";
+  const [hStr, mStr] = timeStr.split(":");
+  let h = parseInt(hStr || "0", 10);
+  if (isNaN(h)) return timeStr;
+  const m = mStr || "00";
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  const padH = h < 10 ? `0${h}` : `${h}`;
+  return `${padH}:${m} ${ampm}`;
+}
+
+/**
  * Gets tomorrow's date and day of the week in Indian Standard Time (Asia/Kolkata).
  */
 export function getTomorrowIstDateTime(now = new Date()): {
@@ -227,7 +242,7 @@ export async function checkOrderWindow(
           return {
             isOpen: false,
             isSlotCapacityFull: true,
-            message: `Current order window (${matchedWindow.start} - ${matchedWindow.end}) has reached its capacity limit (${maxOrders} orders). Kitchen is currently full for this window.`,
+            message: `Current order window (${formatTime12(matchedWindow.start)} - ${formatTime12(matchedWindow.end)}) has reached its capacity limit (${maxOrders} orders). Kitchen is currently full for this window.`,
             currentWindow: matchedWindow,
             canCancelUntil: null,
             todayDateStr: dateStr,
@@ -242,7 +257,7 @@ export async function checkOrderWindow(
 
     return {
       isOpen: true,
-      message: `Ordering is open until ${matchedWindow.end}`,
+      message: `Ordering is open until ${formatTime12(matchedWindow.end)}`,
       currentWindow: matchedWindow,
       canCancelUntil,
       todayDateStr: dateStr,
@@ -268,7 +283,7 @@ export async function checkOrderWindow(
     };
   }
 
-  const windowSummary = windows.map((w) => `${w.start} - ${w.end}`).join(", ");
+  const windowSummary = windows.map((w) => `${formatTime12(w.start)} - ${formatTime12(w.end)}`).join(", ");
   return {
     isOpen: false,
     message: windows.length
