@@ -429,11 +429,13 @@ clientOrderRoutes.post("/", async (c) => {
       const currentUser = await usersCol.findOne({ id: userId });
       if (currentUser) {
         const updateFields: Record<string, unknown> = {};
-        if (!currentUser.username && parsed.data.customerName) {
-          updateFields.username = parsed.data.customerName.trim();
+        const newName = parsed.data.customerName?.trim();
+        const newPhone = parsed.data.contactPhone?.trim();
+        if (newName && newName !== "Customer" && currentUser.username !== newName) {
+          updateFields.username = newName;
         }
-        if (!currentUser.phone && parsed.data.contactPhone) {
-          updateFields.phone = parsed.data.contactPhone.trim();
+        if (newPhone && currentUser.phone !== newPhone) {
+          updateFields.phone = newPhone;
         }
         if (Object.keys(updateFields).length > 0) {
           updateFields.updatedAt = new Date();

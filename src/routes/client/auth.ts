@@ -20,6 +20,7 @@ import type {
   ClientUserDoc,
   ClientSessionDoc,
   ClientOtpDoc,
+  OrderDoc,
 } from "../../types";
 import { getRedisClient, cacheDel, CACHE_KEYS } from "../../lib/redis";
 import { rateLimit } from "../../middleware/rate-limit";
@@ -348,6 +349,39 @@ clientAuthRoutes.post("/verify-otp", async (c) => {
       return c.json({ success: false, message: "Failed to initialize user" }, 500);
     }
 
+    // Auto-discover phone number and username from past orders if missing in client_users profile
+    if (!user.username || !user.phone) {
+      try {
+        const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
+        const queryConditions: Record<string, unknown>[] = [{ userId: user.id }];
+        if (user.email) {
+          queryConditions.push({ "customer.email": user.email.toLowerCase() });
+        }
+        const pastOrder = await ordersCol.findOne(
+          { $or: queryConditions },
+          { sort: { createdAt: -1 } }
+        );
+
+        if (pastOrder?.customer) {
+          const backfillFields: Record<string, unknown> = {};
+          if (!user.username && pastOrder.customer.name && pastOrder.customer.name.trim() !== "Customer") {
+            user.username = pastOrder.customer.name.trim();
+            backfillFields.username = pastOrder.customer.name.trim();
+          }
+          if (!user.phone && pastOrder.customer.phone && pastOrder.customer.phone.trim()) {
+            user.phone = pastOrder.customer.phone.trim();
+            backfillFields.phone = pastOrder.customer.phone.trim();
+          }
+          if (Object.keys(backfillFields).length > 0) {
+            backfillFields.updatedAt = new Date();
+            await users.updateOne({ id: user.id }, { $set: backfillFields });
+          }
+        }
+      } catch (backfillErr) {
+        console.warn("[Auth] Failed to backfill user profile from orders:", backfillErr);
+      }
+    }
+
     // Create session token
     const token = generateSessionToken();
     const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);
@@ -507,8 +541,43 @@ clientAuthRoutes.post("/username", clientAuthMiddleware, async (c) => {
  * Returns current authenticated customer's profile.
  * Protected by clientAuthMiddleware.
  */
-clientAuthRoutes.get("/me", clientAuthMiddleware, (c) => {
+clientAuthRoutes.get("/me", clientAuthMiddleware, async (c) => {
   const user = c.get("user")!;
+  const db = c.get("db");
+
+  // Auto-discover phone number and username from past orders if missing in client_users profile
+  if (!user.username || !user.phone) {
+    try {
+      const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
+      const queryConditions: Record<string, unknown>[] = [{ userId: user.id }];
+      if (user.email) {
+        queryConditions.push({ "customer.email": user.email.toLowerCase() });
+      }
+      const pastOrder = await ordersCol.findOne(
+        { $or: queryConditions },
+        { sort: { createdAt: -1 } }
+      );
+
+      if (pastOrder?.customer) {
+        const backfillFields: Record<string, unknown> = {};
+        if (!user.username && pastOrder.customer.name && pastOrder.customer.name.trim() !== "Customer") {
+          user.username = pastOrder.customer.name.trim();
+          backfillFields.username = pastOrder.customer.name.trim();
+        }
+        if (!user.phone && pastOrder.customer.phone && pastOrder.customer.phone.trim()) {
+          user.phone = pastOrder.customer.phone.trim();
+          backfillFields.phone = pastOrder.customer.phone.trim();
+        }
+        if (Object.keys(backfillFields).length > 0) {
+          backfillFields.updatedAt = new Date();
+          const usersCol = db.collection<ClientUserDoc>(COLLECTIONS.CLIENT_USERS);
+          await usersCol.updateOne({ id: user.id }, { $set: backfillFields });
+        }
+      }
+    } catch (backfillErr) {
+      console.warn("[Auth] Failed to backfill user profile from orders in /me:", backfillErr);
+    }
+  }
 
   return c.json({
     success: true,
