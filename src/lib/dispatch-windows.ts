@@ -309,7 +309,13 @@ export type ReservationResult =
     }
   | {
       success: false;
-      reason: "SLOT_NOT_FOUND" | "SLOT_INACTIVE" | "SLOT_FULL" | "WINDOW_DISABLED";
+      reason:
+        | "SLOT_NOT_FOUND"
+        | "SLOT_INACTIVE"
+        | "SLOT_FULL"
+        | "WINDOW_DISABLED"
+        | "WEEKLY_OFF"
+        | "HOLIDAY";
       message: string;
     };
 
@@ -333,7 +339,30 @@ export async function reserveSlotAtomically(
   const { dateStr, slotId, orderId, holdDurationMinutes = SLOT_HOLD_DURATION_MINUTES } = params;
   const dayName = getDayOfWeekForDate(dateStr);
 
-  // 1. Verify dispatch window configuration for day
+  // 1a. Verify target date is not a holiday
+  const holidaysCol = db.collection<HolidayDoc>(COLLECTIONS.HOLIDAYS);
+  const holiday = await holidaysCol.findOne({ date: dateStr });
+  if (holiday) {
+    return {
+      success: false,
+      reason: "HOLIDAY",
+      message: `Kitchen is closed on ${dateStr} for holiday: ${holiday.reason}. No cooking or dispatch scheduled.`,
+    };
+  }
+
+  // 1b. Verify target day is not a kitchen weekly off day
+  const weeklyOffCol = db.collection<WeeklyOffDoc>(COLLECTIONS.WEEKLY_OFF);
+  const weeklyOffDoc = await weeklyOffCol.findOne({});
+  const offDays = (weeklyOffDoc?.days ?? []).map((d) => d.toLowerCase() as DayOfWeek);
+  if (offDays.includes(dayName)) {
+    return {
+      success: false,
+      reason: "WEEKLY_OFF",
+      message: `Kitchen is closed on ${dayName}s (Weekly Off). No food is cooked or dispatched on this day. Advance pre-orders are scheduled for the next operating day.`,
+    };
+  }
+
+  // 1c. Verify dispatch window configuration for day
   const dispatchWindowsCol = db.collection<DispatchWindowDoc>(COLLECTIONS.DISPATCH_WINDOWS);
   const windowDoc = await dispatchWindowsCol.findOne({ day: dayName });
 

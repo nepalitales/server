@@ -83,10 +83,12 @@ export function getIstDateForTime(hhMm: string, dateStr: string): Date {
 }
 
 /**
- * Checks whether ordering is currently open based on:
- * 1. Holidays (today's date)
- * 2. Weekly Off schedule
- * 3. Daily Order Windows (e.g. 6:00 AM - 8:00 AM)
+ * Checks whether customer order intake is currently open.
+ *
+ * In Nepali Tales' advance pre-order model:
+ * - Weekly Off pauses KITCHEN operations (no cooking, packing, or dispatch on off days).
+ * - Customer order intake remains OPEN on weekly off days (during active intake hours),
+ *   with orders automatically scheduled for fulfillment on the next open operating day.
  *
  * In development mode, `allowDevBypass` can permit testing even when outside hours.
  */
