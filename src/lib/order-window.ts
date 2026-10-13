@@ -83,12 +83,40 @@ export function getIstDateForTime(hhMm: string, dateStr: string): Date {
 }
 
 /**
+ * Gets tomorrow's date and day of the week in Indian Standard Time (Asia/Kolkata).
+ */
+export function getTomorrowIstDateTime(now = new Date()): {
+  dateStr: string; // "YYYY-MM-DD"
+  dayName: DayOfWeek;
+} {
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "long",
+  }).formatToParts(tomorrow);
+
+  const getPart = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  const year = getPart("year");
+  const month = getPart("month");
+  const day = getPart("day");
+  const weekday = getPart("weekday").toLowerCase() as DayOfWeek;
+
+  return {
+    dateStr: `${year}-${month}-${day}`,
+    dayName: weekday,
+  };
+}
+
+/**
  * Checks whether customer order intake is currently open.
  *
- * In Nepali Tales' advance pre-order model:
- * - Weekly Off pauses KITCHEN operations (no cooking, packing, or dispatch on off days).
- * - Customer order intake remains OPEN on weekly off days (during active intake hours),
- *   with orders automatically scheduled for fulfillment on the next open operating day.
+ * In Nepali Tales' next-day pre-order model:
+ * - Orders placed today are cooked and delivered tomorrow.
+ * - If tomorrow is a Weekly Off or Holiday, the kitchen is closed tomorrow,
+ *   so the customer ordering window TODAY is automatically CLOSED.
  *
  * In development mode, `allowDevBypass` can permit testing even when outside hours.
  */
@@ -98,9 +126,52 @@ export async function checkOrderWindow(
 ): Promise<OrderWindowCheckResult> {
   const { dateStr, timeStr, dayName, now } = getIstDateTime();
 
-  // In Nepali Tales' advance pre-order model, customers can place orders on any day
-  // (including kitchen weekly off days) within the day's configured ordering window,
-  // with delivery scheduled for the next open cooking/dispatch operating day.
+  // Next-day pre-order check:
+  // If tomorrow is a Weekly Off or Holiday, dispatches are paused tomorrow,
+  // meaning NO customer orders can be accepted today.
+  const tomorrow = getTomorrowIstDateTime(now);
+
+  // 1. Check if tomorrow is a recurring Weekly Off
+  const weeklyOffCol = db.collection<WeeklyOffDoc>(COLLECTIONS.WEEKLY_OFF);
+  const weeklyOffDoc = await weeklyOffCol.findOne({});
+  const offDays = (weeklyOffDoc?.days ?? []).map((d) => d.toLowerCase() as DayOfWeek);
+
+  if (offDays.includes(tomorrow.dayName)) {
+    if (allowDevBypass) {
+      console.warn(`[OrderWindow Dev Bypass]: Tomorrow (${tomorrow.dayName}) is Weekly Off, but dev bypass is active.`);
+    } else {
+      const tomorrowCapitalized = tomorrow.dayName.charAt(0).toUpperCase() + tomorrow.dayName.slice(1);
+      return {
+        isOpen: false,
+        message: `Ordering is closed today because our kitchen is closed tomorrow (${tomorrowCapitalized}) for weekly off.`,
+        currentWindow: null,
+        canCancelUntil: null,
+        todayDateStr: dateStr,
+        todayDay: dayName,
+        activeWindows: [],
+      };
+    }
+  }
+
+  // 2. Check if tomorrow is a Holiday
+  const holidaysCol = db.collection<HolidayDoc>(COLLECTIONS.HOLIDAYS);
+  const tomorrowHoliday = await holidaysCol.findOne({ date: tomorrow.dateStr });
+
+  if (tomorrowHoliday) {
+    if (allowDevBypass) {
+      console.warn(`[OrderWindow Dev Bypass]: Tomorrow (${tomorrow.dateStr}) is a Holiday (${tomorrowHoliday.reason}), but dev bypass is active.`);
+    } else {
+      return {
+        isOpen: false,
+        message: `Ordering is closed today because our kitchen is closed tomorrow for holiday (${tomorrowHoliday.reason || "Scheduled closure"}).`,
+        currentWindow: null,
+        canCancelUntil: null,
+        todayDateStr: dateStr,
+        todayDay: dayName,
+        activeWindows: [],
+      };
+    }
+  }
 
   // Check Order Window for today
   const orderWindows = db.collection<OrderWindowDoc>(COLLECTIONS.ORDER_WINDOWS);
