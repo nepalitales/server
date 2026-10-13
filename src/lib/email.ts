@@ -510,10 +510,19 @@ export async function sendOrderStatusEmail(
 
   const isCancelled = status === "cancelled_by_customer" || status === "cancelled_by_admin";
 
-  const trackingButtonHtml = trackingUrl
+  let safeTrackingUrl = trackingUrl?.trim();
+  if (safeTrackingUrl && !/^(https?:\/\/|tel:|mailto:)/i.test(safeTrackingUrl)) {
+    if (/^\+?\d{10,15}$/.test(safeTrackingUrl.replace(/[\s-]/g, ""))) {
+      safeTrackingUrl = `tel:${safeTrackingUrl.replace(/[\s-]/g, "")}`;
+    } else {
+      safeTrackingUrl = `https://${safeTrackingUrl}`;
+    }
+  }
+
+  const trackingButtonHtml = safeTrackingUrl
     ? `
     <div style="margin: 28px 0; text-align: center;">
-      <a href="${trackingUrl}" target="_blank" style="background-color: #16a34a; color: #ffffff; padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: 700; text-decoration: none; display: inline-block; box-shadow: 0 4px 10px rgba(22, 163, 74, 0.3);">
+      <a href="${safeTrackingUrl}" target="_blank" style="background-color: #16a34a; color: #ffffff; padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: 700; text-decoration: none; display: inline-block; box-shadow: 0 4px 10px rgba(22, 163, 74, 0.3);">
         Track Delivery Rider Live
       </a>
     </div>

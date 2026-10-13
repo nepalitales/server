@@ -867,8 +867,16 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
       status: targetStatus,
       updatedAt: now,
     };
-    if (parsed.data.trackingUrl) {
-      updateSet["borzo.trackingUrl"] = parsed.data.trackingUrl;
+    let cleanTrackingUrl = parsed.data.trackingUrl?.trim();
+    if (cleanTrackingUrl && !/^(https?:\/\/|tel:|mailto:)/i.test(cleanTrackingUrl)) {
+      if (/^\+?\d{10,15}$/.test(cleanTrackingUrl.replace(/[\s-]/g, ""))) {
+        cleanTrackingUrl = `tel:${cleanTrackingUrl.replace(/[\s-]/g, "")}`;
+      } else {
+        cleanTrackingUrl = `https://${cleanTrackingUrl}`;
+      }
+    }
+    if (cleanTrackingUrl) {
+      updateSet["borzo.trackingUrl"] = cleanTrackingUrl;
     }
 
     await ordersCol.updateOne(
@@ -879,7 +887,7 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
           timeline: {
             status: targetStatus,
             timestamp: now,
-            note: note || (parsed.data.trackingUrl ? `Dispatched via courier with tracking: ${parsed.data.trackingUrl}` : `Status changed to ${targetStatus}`),
+            note: note || (cleanTrackingUrl ? `Dispatched via courier with tracking: ${cleanTrackingUrl}` : `Status changed to ${targetStatus}`),
           },
         } as any,
       },
@@ -892,7 +900,7 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
       sendOrderStatusEmail({
         order: updated || order,
         status: targetStatus,
-        trackingUrl: parsed.data.trackingUrl || updated?.borzo?.trackingUrl || order.borzo?.trackingUrl,
+        trackingUrl: cleanTrackingUrl || updated?.borzo?.trackingUrl || order.borzo?.trackingUrl,
         note,
         apiKey: c.env.RESEND_API_KEY,
         fromEmail: c.env.RESEND_FROM_EMAIL,
