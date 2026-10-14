@@ -79,7 +79,7 @@ clientRoutes.get("/products", async (c) => {
       products.countDocuments(filter),
     ]);
 
-    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+    c.header("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=120");
     return c.json({
       success: true,
       products: items,
@@ -116,7 +116,7 @@ clientRoutes.get("/products/:productId", async (c) => {
       return c.json({ success: false, message: "Product not found" }, 404);
     }
 
-    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     return c.json({ success: true, product });
   } catch (error) {
     console.error("Client get product error:", error);
@@ -162,7 +162,7 @@ clientRoutes.get("/categories", async (c) => {
       products: prodsByCategory.get(cat.id) ?? [],
     }));
 
-    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     return c.json({ success: true, categories: result });
   } catch (error) {
     console.error("Client get categories error:", error);
@@ -300,7 +300,7 @@ clientRoutes.get("/holidays", async (c) => {
       .sort({ date: 1 })
       .toArray();
 
-    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     return c.json({ success: true, holidays: result });
   } catch (error) {
     console.error("Client get holidays error:", error);
@@ -398,7 +398,7 @@ clientRoutes.get("/addons", async (c) => {
     const db = c.get("db");
     const addons = await getCachedAddons(db, { availableOnly: true });
 
-    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     return c.json({ success: true, addons });
   } catch (error) {
     console.error("Client get addons error:", error);

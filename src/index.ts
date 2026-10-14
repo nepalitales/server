@@ -22,7 +22,6 @@ import { faqRoutes } from "./routes/faqs";
 import { adminDispatchWindowRoutes } from "./routes/admin/dispatch-windows";
 import { addonRoutes } from "./routes/addons";
 import { adminOrderSettingsRoutes } from "./routes/admin/order-settings";
-import { matchEdgeAddonsCache } from "./lib/addons-cache";
 import { getCachedConfigVersion } from "./lib/config-version";
 import { edgeCacheMiddleware } from "./middleware/edge-cache";
 
@@ -95,21 +94,9 @@ app.use(
   }),
 );
 
-// Serve cached public add-ons without opening MongoDB
-app.use("/api/client/addons", async (c, next) => {
-  if (c.req.method !== "GET") {
-    await next();
-    return;
-  }
-  const cached = await matchEdgeAddonsCache();
-  if (cached) {
-    return new Response(cached.body, {
-      status: cached.status,
-      headers: cached.headers,
-    });
-  }
-  await next();
-});
+// Global Multi-Tier Edge Cache for public customer routes
+// Returns response immediately from isolate RAM (< 0.05ms) or Cloudflare Cache API (1-2ms)
+app.use("/api/client/*", edgeCacheMiddleware);
 
 // Serve cached config-version without opening MongoDB
 app.use("/api/client/config-version", async (c, next) => {
@@ -127,10 +114,6 @@ app.use("/api/client/config-version", async (c, next) => {
   }
   await next();
 });
-
-// Global Upstash Redis Edge Cache for public customer routes
-// If cached, returns response immediately (< 15ms) without opening MongoDB TCP sockets
-app.use("/api/client/*", edgeCacheMiddleware);
 
 // Database connection -- opens per-request, closes in finally block
 app.use("/api/admin/*", dbMiddleware);

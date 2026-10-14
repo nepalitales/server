@@ -1,6 +1,7 @@
 import type { Db } from "mongodb";
 import { COLLECTIONS } from "./db";
 import { getRedisClient, cacheGet, cacheSet, cacheDel, CACHE_KEYS } from "./redis";
+import { invalidateLocalMemoryCache } from "../middleware/edge-cache";
 
 const CONFIG_VERSION_DOC_ID = "global";
 
@@ -27,10 +28,11 @@ export function setCachedConfigVersion(version: string) {
 /**
  * Bumps the config version in MongoDB and Redis.
  * Called by every admin mutation that clients care about.
- * Automatically evicts public client caches in Upstash Redis.
+ * Automatically evicts public client caches in Upstash Redis and isolate RAM.
  */
 export async function bumpConfigVersion(db: Db, env?: any): Promise<string> {
   invalidateConfigVersionCache();
+  invalidateLocalMemoryCache();
 
   const collection = db.collection<{
     _id?: unknown;
