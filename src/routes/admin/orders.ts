@@ -754,8 +754,14 @@ adminOrderRoutes.get("/:orderId/bill", async (c) => {
         name: order.customer.name,
         phone: order.customer.phone,
         email: order.customer.email,
-        deliveryAddress: order.deliveryAddress.borzoFormat.address,
-        note: order.deliveryAddress.borzoFormat.note,
+        deliveryAddress:
+          order.deliveryAddress?.borzoFormat?.address ||
+          order.deliveryAddress?.street ||
+          "Thane, Maharashtra",
+        note:
+          order.deliveryAddress?.borzoFormat?.note ||
+          order.deliveryAddress?.landmark ||
+          "",
       },
       items: order.items.map((i) => ({
         name: i.productName,
