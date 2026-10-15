@@ -312,6 +312,7 @@ adminOrderRoutes.get("/cancelled", async (c) => {
  */
 adminOrderRoutes.get("/reports", async (c) => {
   try {
+    const dateQuery = c.req.query("date");
     const monthQuery = c.req.query("month");
     const periodQuery = c.req.query("period") as
       | "this_week"
@@ -319,13 +320,13 @@ adminOrderRoutes.get("/reports", async (c) => {
       | "last_month"
       | "this_year"
       | undefined;
-    const parsed = reportsQuerySchema.safeParse({ month: monthQuery, period: periodQuery });
+    const parsed = reportsQuerySchema.safeParse({ date: dateQuery, month: monthQuery, period: periodQuery });
 
     if (!parsed.success) {
       return c.json(
         {
           success: false,
-          message: "Invalid query parameters. Period must be 'this_week', 'this_month', or 'last_month'.",
+          message: "Invalid query parameters.",
           errors: formatZodErrors(parsed.error),
         },
         400,
@@ -333,7 +334,8 @@ adminOrderRoutes.get("/reports", async (c) => {
     }
 
     const { dateStr } = getIstDateTime();
-    const period = parsed.data.period || (parsed.data.month ? undefined : "this_month");
+    const targetDate = parsed.data.date;
+    const period = parsed.data.period || (parsed.data.month || targetDate ? undefined : "this_month");
     const targetMonth = parsed.data.month || dateStr.slice(0, 7);
 
     let start: Date;
@@ -348,7 +350,34 @@ adminOrderRoutes.get("/reports", async (c) => {
     ];
     const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    if (period === "this_week") {
+    if (targetDate) {
+      periodKey = "day";
+      start = new Date(`${targetDate}T00:00:00+05:30`);
+      const [curY, curM, curD] = targetDate.split("-").map(Number);
+      const nextDayDate = new Date(Date.UTC(curY!, curM! - 1, curD! + 1));
+      const nextY = nextDayDate.getUTCFullYear();
+      const nextM = String(nextDayDate.getUTCMonth() + 1).padStart(2, "0");
+      const nextD = String(nextDayDate.getUTCDate()).padStart(2, "0");
+      end = new Date(`${nextY}-${nextM}-${nextD}T00:00:00+05:30`);
+
+      for (let h = 0; h < 24; h++) {
+        const hourStr = String(h).padStart(2, "0");
+        const hour12 = h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`;
+        daysList.push({
+          date: `${hourStr}:00`,
+          label: hour12,
+        });
+      }
+
+      const dayObj = new Date(`${targetDate}T12:00:00+05:30`);
+      const fullDayName = dayObj.toLocaleDateString("en-IN", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+      periodLabel = fullDayName;
+    } else if (period === "this_week") {
       periodKey = "this_week";
       const [curY, curM, curD] = dateStr.split("-").map(Number);
       const todayDate = new Date(Date.UTC(curY!, curM! - 1, curD!));
@@ -454,7 +483,7 @@ adminOrderRoutes.get("/reports", async (c) => {
       createdAt: { $gte: start, $lt: end },
     };
 
-    const timelineFormat = period === "this_year" ? "%Y-%m" : "%Y-%m-%d";
+    const timelineFormat = targetDate ? "%H:00" : period === "this_year" ? "%Y-%m" : "%Y-%m-%d";
 
     const [
       revenueAgg,
