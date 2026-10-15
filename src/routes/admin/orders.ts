@@ -131,7 +131,7 @@ adminOrderRoutes.get("/live-summary", async (c) => {
       };
 
       if (redis) {
-        cacheSet(redis, CACHE_KEYS.ADMIN_LIVE_SUMMARY, counts, 10).catch(() => {});
+        cacheSet(redis, CACHE_KEYS.ADMIN_LIVE_SUMMARY, counts, 30).catch(() => {});
       }
     }
 

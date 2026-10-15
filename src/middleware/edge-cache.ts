@@ -1,6 +1,6 @@
 import type { Context, Next } from "hono";
 import type { AppBindings } from "../config/app";
-import { getRedisClient, cacheGet, cacheSet, CACHE_KEYS } from "../lib/redis";
+import { CACHE_KEYS } from "../lib/redis";
 
 interface CacheConfig {
   key: (c: Context<AppBindings>) => string;
@@ -121,9 +121,8 @@ function getCfCache(): Cache | null {
  * High-performance Multi-Tier Edge Cache Middleware:
  * - Tier 1: Isolate RAM (< 0.05ms, 0 subrequests)
  * - Tier 2: Cloudflare Native Cache API (1-2ms, 0 external subrequests)
- * - Tier 3: Upstash Redis fallback (140-150ms)
- * - Cache Miss: Proceeds to handler, then saves to L1, L2, L3 asynchronously in background
- *   using waitUntil() so the client response is NEVER blocked by cache saves.
+ * - Cache Miss: Proceeds to handler, then saves to L1 RAM & L2 Cloudflare Cache
+ *   asynchronously using waitUntil() without consuming Upstash Redis commands.
  */
 export async function edgeCacheMiddleware(
   c: Context<AppBindings>,
@@ -184,41 +183,11 @@ export async function edgeCacheMiddleware(
     }
   }
 
-  // 3. Tier 3: Upstash Redis fallback
-  const redis = getRedisClient(c.env);
-  if (redis) {
-    try {
-      const redisData = await cacheGet<Record<string, unknown>>(redis, cacheKey);
-      if (redisData) {
-        setToMemory(cacheKey, redisData, config.ttlSeconds);
-
-        // Populate Cloudflare Cache API in background
-        if (cfCache && c.executionCtx?.waitUntil) {
-          const edgeRes = new Response(JSON.stringify(redisData), {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              "Cache-Control": cacheControlHeader,
-              "X-Cache": "HIT-L2-EDGE",
-            },
-          });
-          c.executionCtx.waitUntil(cfCache.put(requestUrl, edgeRes).catch(() => {}));
-        }
-
-        c.header("X-Cache", "HIT-L3-REDIS");
-        c.header("Cache-Control", cacheControlHeader);
-        return c.json(redisData);
-      }
-    } catch {
-      // Fallback to database
-    }
-  }
-
-  // 4. Cache MISS: Proceed to database route handler
+  // 3. Cache MISS: Proceed to database route handler
   c.header("X-Cache", "MISS");
   await next();
 
-  // If handler succeeded with 200, save response in L1, L2, and L3
+  // If handler succeeded with 200, save response in L1 RAM and L2 Cloudflare Cache
   if (c.res.status === 200) {
     try {
       const clonedRes = c.res.clone();
@@ -227,10 +196,8 @@ export async function edgeCacheMiddleware(
       // Immediately save in L1 RAM
       setToMemory(cacheKey, jsonData, config.ttlSeconds);
 
-      // Save to L2 (Cloudflare Cache API) and L3 (Upstash Redis) asynchronously
-      const bgTasks: Promise<unknown>[] = [];
-
-      if (cfCache) {
+      // Save to L2 (Cloudflare Native Cache API) asynchronously in background
+      if (cfCache && c.executionCtx?.waitUntil) {
         const edgeRes = new Response(JSON.stringify(jsonData), {
           status: 200,
           headers: {
@@ -239,18 +206,7 @@ export async function edgeCacheMiddleware(
             "X-Cache": "HIT-L2-EDGE",
           },
         });
-        bgTasks.push(cfCache.put(requestUrl, edgeRes).catch(() => {}));
-      }
-
-      if (redis) {
-        bgTasks.push(cacheSet(redis, cacheKey, jsonData, config.ttlSeconds));
-      }
-
-      // In Cloudflare Workers, waitUntil ensures background tasks finish without blocking the HTTP response
-      if (c.executionCtx?.waitUntil) {
-        c.executionCtx.waitUntil(Promise.all(bgTasks));
-      } else {
-        void Promise.all(bgTasks);
+        c.executionCtx.waitUntil(cfCache.put(requestUrl, edgeRes).catch(() => {}));
       }
     } catch {
       // Non-fatal: continue normally
