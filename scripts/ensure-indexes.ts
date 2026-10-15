@@ -38,6 +38,7 @@ export async function ensureIndexes() {
     await db.collection("orders").createIndex({ "payment.razorpayOrderId": 1 });
     await db.collection("orders").createIndex({ status: 1 });
     await db.collection("orders").createIndex({ createdAt: -1 });
+    await db.collection("orders").createIndex({ status: 1, createdAt: -1 });
     await db.collection("orders").createIndex({ userId: 1, createdAt: -1 });
     await db.collection("orders").createIndex({ "customer.phone": 1 });
     await db.collection("orders").createIndex({ dispatchDate: 1, "dispatchSlot.id": 1 });
@@ -78,6 +79,7 @@ export async function ensureIndexes() {
     await db.collection("dispatch_windows").createIndex({ day: 1 }, { unique: true });
     await db.collection("holidays").createIndex({ id: 1 }, { unique: true });
     await db.collection("holidays").createIndex({ date: 1 }, { unique: true });
+    await db.collection("config_version").createIndex({ docId: 1 }, { unique: true });
     await db.collection("faqs").createIndex({ id: 1 }, { unique: true });
     await db.collection("faqs").createIndex({ isActive: 1, displayOrder: 1 });
     await db.collection("faqs").createIndex({ category: 1 });
