@@ -899,7 +899,7 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
 
       const updated = await ordersCol.findOne({ id: orderId });
       if (order.customer?.email) {
-        await sendOrderStatusEmail({
+        const readyEmailPromise = sendOrderStatusEmail({
           order: updated || order,
           status: "ready",
           note,
@@ -907,6 +907,12 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
           fromEmail: c.env.RESEND_FROM_EMAIL,
           isDevelopment: isDev,
         }).catch((e) => console.error("Failed to send order ready email:", e));
+
+        if (c.executionCtx?.waitUntil) {
+          c.executionCtx.waitUntil(readyEmailPromise);
+        } else {
+          void readyEmailPromise;
+        }
       }
 
       await recordOrderEvent(db, {
@@ -964,9 +970,9 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
 
     const updated = await ordersCol.findOne({ id: orderId });
 
-    // Send order status update email to customer via Resend
+    // Send order status update email to customer via Resend in background
     if (order.customer?.email) {
-      await sendOrderStatusEmail({
+      const statusEmailPromise = sendOrderStatusEmail({
         order: updated || order,
         status: targetStatus,
         trackingUrl: cleanTrackingUrl || updated?.borzo?.trackingUrl || order.borzo?.trackingUrl,
@@ -975,6 +981,12 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
         fromEmail: c.env.RESEND_FROM_EMAIL,
         isDevelopment: isDev,
       }).catch((e) => console.error("Failed to send status update email:", e));
+
+      if (c.executionCtx?.waitUntil) {
+        c.executionCtx.waitUntil(statusEmailPromise);
+      } else {
+        void statusEmailPromise;
+      }
     }
 
     await recordOrderEvent(db, {
@@ -1098,8 +1110,8 @@ adminOrderRoutes.post("/:orderId/cancel", async (c) => {
 
     const updated = await ordersCol.findOne({ id: orderId });
 
-    // Send cancellation notice to customer and kitchen admin via Resend
-    await sendOrderStatusEmail({
+    // Send cancellation notice to customer and kitchen admin via Resend in background
+    const adminCancelEmailPromise = sendOrderStatusEmail({
       order: updated || order,
       status: "cancelled_by_admin",
       note: `Order cancelled by kitchen. Reason: ${reason}. Refund: ₹${effectiveRefundAmount}`,
@@ -1108,6 +1120,12 @@ adminOrderRoutes.post("/:orderId/cancel", async (c) => {
       adminEmail: c.env.ADMIN_NOTIFICATION_EMAIL,
       isDevelopment: isDev,
     }).catch((e) => console.error("Failed to send admin cancellation email:", e));
+
+    if (c.executionCtx?.waitUntil) {
+      c.executionCtx.waitUntil(adminCancelEmailPromise);
+    } else {
+      void adminCancelEmailPromise;
+    }
 
     await recordOrderEvent(db, {
       type: "order_cancelled",

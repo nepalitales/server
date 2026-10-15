@@ -592,14 +592,20 @@ clientOrderRoutes.post("/verify-payment", async (c) => {
 
     const updatedOrder = await ordersCol.findOne({ id: orderId });
 
-    // Send itemized order confirmation email via Resend
-    await sendOrderConfirmationEmail({
+    // Send itemized order confirmation email via Resend in background
+    const emailPromise = sendOrderConfirmationEmail({
       order: updatedOrder || order,
       apiKey: c.env.RESEND_API_KEY,
       fromEmail: c.env.RESEND_FROM_EMAIL,
       adminEmail: c.env.ADMIN_NOTIFICATION_EMAIL,
       isDevelopment: isDev,
     }).catch((e) => console.error("Failed to send order confirmation email:", e));
+
+    if (c.executionCtx?.waitUntil) {
+      c.executionCtx.waitUntil(emailPromise);
+    } else {
+      void emailPromise;
+    }
 
     // Broadcast Real-Time SSE event to Admin Dashboard
     await recordOrderEvent(db, {
@@ -824,7 +830,7 @@ clientOrderRoutes.post("/:orderId/cancel", async (c) => {
     const updated = await ordersCol.findOne({ id: orderId });
 
     // Send cancellation & refund email notice via Resend to customer and kitchen admin
-    sendOrderStatusEmail({
+    const cancelEmailPromise = sendOrderStatusEmail({
       order: updated || order,
       status: "cancelled_by_customer",
       note: "Cancelled by customer before ordering window closed. Full refund initiated.",
@@ -833,6 +839,12 @@ clientOrderRoutes.post("/:orderId/cancel", async (c) => {
       adminEmail: c.env.ADMIN_NOTIFICATION_EMAIL,
       isDevelopment: isDev,
     }).catch((e) => console.error("Failed to send cancellation email:", e));
+
+    if (c.executionCtx?.waitUntil) {
+      c.executionCtx.waitUntil(cancelEmailPromise);
+    } else {
+      void cancelEmailPromise;
+    }
 
     // Broadcast SSE update to Admin Dashboard
     await recordOrderEvent(db, {

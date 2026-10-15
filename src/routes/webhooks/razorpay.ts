@@ -86,14 +86,20 @@ razorpayWebhookRoutes.post("/", async (c) => {
           });
         }
 
-        // Send itemized order confirmation email via Resend
-        await sendOrderConfirmationEmail({
+        // Send itemized order confirmation email via Resend in background
+        const emailPromise = sendOrderConfirmationEmail({
           order,
           apiKey: c.env.RESEND_API_KEY,
           fromEmail: c.env.RESEND_FROM_EMAIL,
           adminEmail: c.env.ADMIN_NOTIFICATION_EMAIL,
           isDevelopment: isDev,
         }).catch((e) => console.error("Failed to send email confirmation via webhook:", e));
+
+        if (c.executionCtx?.waitUntil) {
+          c.executionCtx.waitUntil(emailPromise);
+        } else {
+          void emailPromise;
+        }
 
         // Push real-time SSE event to admin dashboard
         await recordOrderEvent(db, {

@@ -12,57 +12,57 @@ interface CacheConfig {
 const PUBLIC_CACHE_ROUTES: Record<string, CacheConfig> = {
   "/api/client/categories": {
     key: () => CACHE_KEYS.MENU_CATEGORIES,
-    ttlSeconds: 300,
-    browserMaxAge: 0,
-    edgeMaxAge: 0,
+    ttlSeconds: 600, // 10 minutes
+    browserMaxAge: 60,
+    edgeMaxAge: 300,
   },
   "/api/client/order-windows": {
     key: () => CACHE_KEYS.ORDER_WINDOWS,
     ttlSeconds: 300,
-    browserMaxAge: 0,
-    edgeMaxAge: 0,
+    browserMaxAge: 30,
+    edgeMaxAge: 120,
   },
   "/api/client/order-window-status": {
     key: () => CACHE_KEYS.ORDER_WINDOW_STATUS,
     ttlSeconds: 30,
-    browserMaxAge: 0,
-    edgeMaxAge: 0,
+    browserMaxAge: 10,
+    edgeMaxAge: 30,
   },
   "/api/client/order-settings": {
     key: () => CACHE_KEYS.ORDER_SETTINGS,
-    ttlSeconds: 300,
-    browserMaxAge: 0,
-    edgeMaxAge: 0,
+    ttlSeconds: 3600,
+    browserMaxAge: 60,
+    edgeMaxAge: 300,
   },
   "/api/client/weekly-off": {
     key: () => CACHE_KEYS.WEEKLY_OFF,
-    ttlSeconds: 300,
-    browserMaxAge: 0,
-    edgeMaxAge: 0,
+    ttlSeconds: 3600,
+    browserMaxAge: 60,
+    edgeMaxAge: 300,
   },
   "/api/client/holidays": {
     key: () => CACHE_KEYS.HOLIDAYS,
-    ttlSeconds: 300,
-    browserMaxAge: 0,
-    edgeMaxAge: 0,
+    ttlSeconds: 3600,
+    browserMaxAge: 60,
+    edgeMaxAge: 300,
   },
   "/api/client/addons": {
     key: () => CACHE_KEYS.ADDONS,
-    ttlSeconds: 300,
-    browserMaxAge: 0,
-    edgeMaxAge: 0,
+    ttlSeconds: 3600,
+    browserMaxAge: 60,
+    edgeMaxAge: 300,
   },
   "/api/client/config": {
     key: () => "cache:client:config_snapshot",
     ttlSeconds: 300,
-    browserMaxAge: 0,
-    edgeMaxAge: 0,
+    browserMaxAge: 30,
+    edgeMaxAge: 120,
   },
   "/api/client/config-version": {
     key: () => CACHE_KEYS.CONFIG_VERSION,
     ttlSeconds: 60,
-    browserMaxAge: 0,
-    edgeMaxAge: 0,
+    browserMaxAge: 5,
+    edgeMaxAge: 10,
   },
   "/api/client/faqs": {
     key: (c) => `${CACHE_KEYS.FAQS}:${c.req.query("category") || "all"}`,
@@ -145,10 +145,7 @@ export async function edgeCacheMiddleware(
   }
 
   const cacheKey = config.key(c);
-  const cacheControlHeader =
-    config.browserMaxAge > 0
-      ? `public, max-age=${config.browserMaxAge}, s-maxage=${config.edgeMaxAge}, stale-while-revalidate=300`
-      : "no-cache, no-store, must-revalidate";
+  const cacheControlHeader = `public, max-age=${config.browserMaxAge}, s-maxage=${config.edgeMaxAge}, stale-while-revalidate=300`;
 
   // 1. Tier 1: Check In-Memory RAM Cache
   const memoryData = getFromMemory(cacheKey);
@@ -162,7 +159,7 @@ export async function edgeCacheMiddleware(
   const cfCache = getCfCache();
   const requestUrl = c.req.url;
 
-  if (cfCache && config.edgeMaxAge > 0) {
+  if (cfCache) {
     try {
       const matched = await cfCache.match(requestUrl);
       if (matched) {
@@ -196,7 +193,7 @@ export async function edgeCacheMiddleware(
         setToMemory(cacheKey, redisData, config.ttlSeconds);
 
         // Populate Cloudflare Cache API in background
-        if (cfCache && config.edgeMaxAge > 0 && c.executionCtx?.waitUntil) {
+        if (cfCache && c.executionCtx?.waitUntil) {
           const edgeRes = new Response(JSON.stringify(redisData), {
             status: 200,
             headers: {
@@ -233,7 +230,7 @@ export async function edgeCacheMiddleware(
       // Save to L2 (Cloudflare Cache API) and L3 (Upstash Redis) asynchronously
       const bgTasks: Promise<unknown>[] = [];
 
-      if (cfCache && config.edgeMaxAge > 0) {
+      if (cfCache) {
         const edgeRes = new Response(JSON.stringify(jsonData), {
           status: 200,
           headers: {

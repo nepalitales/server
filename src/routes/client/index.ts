@@ -162,7 +162,7 @@ clientRoutes.get("/categories", async (c) => {
       products: prodsByCategory.get(cat.id) ?? [],
     }));
 
-    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     return c.json({ success: true, categories: result });
   } catch (error) {
     console.error("Client get categories error:", error);
@@ -333,7 +333,7 @@ clientRoutes.get("/config", async (c) => {
         )
         .sort({ date: 1 })
         .toArray(),
-      getConfigVersion(db),
+      getConfigVersion(db, c.env),
     ]);
 
     const dayOrder: DayOfWeek[] = [
@@ -464,7 +464,7 @@ clientRoutes.get("/faqs", async (c) => {
 clientRoutes.get("/config-version", async (c) => {
   try {
     const db = c.get("db");
-    const version = await getConfigVersion(db);
+    const version = await getConfigVersion(db, c.env);
 
     // Edge-cache for 10s, browser-cache for 5s, serve stale up to 30s
     c.header(

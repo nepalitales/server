@@ -5,7 +5,7 @@ import { COLLECTIONS } from "../../lib/db";
 import { verifyPassword, generateSessionToken } from "../../lib/crypto";
 import { loginSchema } from "../../schemas";
 import { formatZodErrors } from "../../utils";
-import { authMiddleware } from "../../middleware/auth";
+import { authMiddleware, invalidateAdminSessionCache } from "../../middleware/auth";
 import { rateLimit } from "../../middleware/rate-limit";
 import type { AdminDoc, SessionDoc } from "../../types";
 
@@ -109,6 +109,7 @@ authRoutes.post("/logout", authMiddleware, async (c) => {
 
     // Delete all sessions for this admin (logout everywhere)
     await sessions.deleteMany({ adminId });
+    invalidateAdminSessionCache();
 
     deleteCookie(c, SESSION_COOKIE, { path: "/" });
 
