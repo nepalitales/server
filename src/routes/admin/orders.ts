@@ -189,21 +189,34 @@ adminOrderRoutes.get("/events", (c) => {
 adminOrderRoutes.get("/", async (c) => {
   try {
     const status = c.req.query("status");
+    const dateQuery = c.req.query("date");
     const search = c.req.query("search")?.trim();
     const page = Math.max(1, parseInt(c.req.query("page") || "1", 10));
-    const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") || "25", 10)));
+    const limit = Math.min(500, Math.max(1, parseInt(c.req.query("limit") || "100", 10)));
     const skip = (page - 1) * limit;
 
     const db = c.get("db");
-    // Automatically transition any placed orders whose order window closed into "preparing"
-    await autoTransitionOrdersToPreparing(db);
-
     const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
 
     const filter: Record<string, unknown> = {};
 
-    if (status) {
-      filter.status = status;
+    if (status && status !== "all") {
+      if (status === "out_for_delivery") {
+        filter.status = { $in: ["porter_booked", "out_for_delivery"] };
+      } else {
+        filter.status = status;
+      }
+    }
+
+    if (dateQuery && /^\d{4}-\d{2}-\d{2}$/.test(dateQuery)) {
+      const startOfDay = new Date(`${dateQuery}T00:00:00+05:30`);
+      const [curY, curM, curD] = dateQuery.split("-").map(Number);
+      const nextDay = new Date(Date.UTC(curY!, curM! - 1, curD! + 1));
+      const nextY = nextDay.getUTCFullYear();
+      const nextM = String(nextDay.getUTCMonth() + 1).padStart(2, "0");
+      const nextD = String(nextDay.getUTCDate()).padStart(2, "0");
+      const endOfDay = new Date(`${nextY}-${nextM}-${nextD}T00:00:00+05:30`);
+      filter.createdAt = { $gte: startOfDay, $lt: endOfDay };
     }
 
     if (search) {
@@ -214,12 +227,30 @@ adminOrderRoutes.get("/", async (c) => {
       ];
     }
 
-    const [orders, total, placedCount, preparingCount, readyCount] = await Promise.all([
+    const baseDateFilter: Record<string, unknown> = {};
+    if (filter.createdAt) {
+      baseDateFilter.createdAt = filter.createdAt;
+    }
+
+    const [
+      orders,
+      total,
+      placedCount,
+      preparingCount,
+      readyCount,
+      outForDeliveryCount,
+      deliveredCount,
+    ] = await Promise.all([
       ordersCol.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).toArray(),
       ordersCol.countDocuments(filter),
-      ordersCol.countDocuments({ status: "placed" }),
-      ordersCol.countDocuments({ status: "preparing" }),
-      ordersCol.countDocuments({ status: "ready" }),
+      ordersCol.countDocuments({ ...baseDateFilter, status: "placed" }),
+      ordersCol.countDocuments({ ...baseDateFilter, status: "preparing" }),
+      ordersCol.countDocuments({ ...baseDateFilter, status: "ready" }),
+      ordersCol.countDocuments({
+        ...baseDateFilter,
+        status: { $in: ["porter_booked", "out_for_delivery"] },
+      }),
+      ordersCol.countDocuments({ ...baseDateFilter, status: "delivered" }),
     ]);
 
     return c.json({
@@ -232,9 +263,12 @@ adminOrderRoutes.get("/", async (c) => {
         totalPages: Math.ceil(total / limit),
       },
       counts: {
+        all: total,
         placed: placedCount,
         preparing: preparingCount,
         ready: readyCount,
+        outForDelivery: outForDeliveryCount,
+        delivered: deliveredCount,
       },
     });
   } catch (error) {
