@@ -106,9 +106,14 @@ export async function edgeCacheMiddleware(
 
   const path = c.req.path;
   const config = PUBLIC_CACHE_ROUTES[path];
-
   // If this route is not in the cache manifest, pass through
   if (!config) {
+    await next();
+    return;
+  }
+
+  // Bypass cache if authenticated user or tester parameter is present
+  if (c.req.header("authorization") || c.req.query("tester")) {
     await next();
     return;
   }

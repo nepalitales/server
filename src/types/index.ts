@@ -58,6 +58,7 @@ export interface ProductDoc {
   type: FoodType;
   quantity?: string; // e.g. "6 pcs", "2 pcs"
   isAvailable: boolean;
+  isTestOnly?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

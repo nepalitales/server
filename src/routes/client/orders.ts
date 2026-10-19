@@ -250,6 +250,19 @@ clientOrderRoutes.post("/", async (c) => {
         );
       }
 
+      if (product.isTestOnly) {
+        const user = c.get("user");
+        if (user?.email?.toLowerCase() !== "bhavartheankit@gmail.com") {
+          return c.json(
+            {
+              success: false,
+              message: "This test product is reserved for authorized testers only.",
+            },
+            403,
+          );
+        }
+      }
+
       const subtotal = product.price * item.quantity;
       itemTotal += subtotal;
 
