@@ -10,12 +10,6 @@ interface CacheConfig {
 }
 
 const PUBLIC_CACHE_ROUTES: Record<string, CacheConfig> = {
-  "/api/client/categories": {
-    key: () => CACHE_KEYS.MENU_CATEGORIES,
-    ttlSeconds: 600, // 10 minutes
-    browserMaxAge: 60,
-    edgeMaxAge: 300,
-  },
   "/api/client/addons": {
     key: () => CACHE_KEYS.ADDONS,
     ttlSeconds: 3600,

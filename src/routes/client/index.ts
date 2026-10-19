@@ -233,11 +233,7 @@ clientRoutes.get("/categories", async (c) => {
       products: prodsByCategory.get(cat.id) ?? [],
     }));
 
-    if (isTester) {
-      c.header("Cache-Control", "no-cache, no-store, must-revalidate");
-    } else {
-      c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
-    }
+    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
     return c.json({ success: true, categories: result });
   } catch (error) {
     console.error("Client get categories error:", error);
