@@ -158,7 +158,7 @@ export async function checkOrderWindow(
       const tomorrowCapitalized = tomorrow.dayName.charAt(0).toUpperCase() + tomorrow.dayName.slice(1);
       return {
         isOpen: false,
-        message: `Ordering is closed today because our kitchen is closed tomorrow (${tomorrowCapitalized}) for weekly off.`,
+        message: `Ordering is closed today (Kitchen off on ${tomorrowCapitalized}). Ordering reopens ${tomorrowCapitalized} from 2:00 PM – 4:00 PM for advance delivery.`,
         currentWindow: null,
         canCancelUntil: null,
         todayDateStr: dateStr,
@@ -287,7 +287,7 @@ export async function checkOrderWindow(
   return {
     isOpen: false,
     message: windows.length
-      ? `Ordering is currently closed. Today's order window(s): ${windowSummary}`
+      ? `Today's order window opens at ${windowSummary} for advance delivery.`
       : `Ordering is closed for today.`,
     currentWindow: null,
     canCancelUntil: null,
