@@ -16,47 +16,17 @@ const PUBLIC_CACHE_ROUTES: Record<string, CacheConfig> = {
     browserMaxAge: 60,
     edgeMaxAge: 300,
   },
-  "/api/client/order-windows": {
-    key: () => CACHE_KEYS.ORDER_WINDOWS,
-    ttlSeconds: 300,
-    browserMaxAge: 30,
-    edgeMaxAge: 120,
-  },
-  "/api/client/order-window-status": {
-    key: () => CACHE_KEYS.ORDER_WINDOW_STATUS,
-    ttlSeconds: 30,
-    browserMaxAge: 10,
-    edgeMaxAge: 30,
-  },
-  "/api/client/order-settings": {
-    key: () => CACHE_KEYS.ORDER_SETTINGS,
-    ttlSeconds: 3600,
-    browserMaxAge: 60,
-    edgeMaxAge: 300,
-  },
-  "/api/client/weekly-off": {
-    key: () => CACHE_KEYS.WEEKLY_OFF,
-    ttlSeconds: 3600,
-    browserMaxAge: 60,
-    edgeMaxAge: 300,
-  },
-  "/api/client/holidays": {
-    key: () => CACHE_KEYS.HOLIDAYS,
-    ttlSeconds: 3600,
-    browserMaxAge: 60,
-    edgeMaxAge: 300,
-  },
   "/api/client/addons": {
     key: () => CACHE_KEYS.ADDONS,
     ttlSeconds: 3600,
     browserMaxAge: 60,
     edgeMaxAge: 300,
   },
-  "/api/client/config": {
-    key: () => "cache:client:config_snapshot",
-    ttlSeconds: 300,
-    browserMaxAge: 30,
-    edgeMaxAge: 120,
+  "/api/client/order-settings": {
+    key: () => CACHE_KEYS.ORDER_SETTINGS,
+    ttlSeconds: 3600,
+    browserMaxAge: 60,
+    edgeMaxAge: 300,
   },
   "/api/client/config-version": {
     key: () => CACHE_KEYS.CONFIG_VERSION,

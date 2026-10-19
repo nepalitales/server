@@ -199,7 +199,7 @@ clientRoutes.get("/order-windows", async (c) => {
       windows: [],
     });
 
-    c.header("Cache-Control", "public, max-age=30, s-maxage=120, stale-while-revalidate=300");
+    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
     return c.json({ success: true, orderWindows: result });
   } catch (error) {
     console.error("Client get order windows error:", error);
@@ -218,7 +218,7 @@ clientRoutes.get("/order-window-status", async (c) => {
     const db = c.get("db");
     // Strictly evaluate real-life live order window schedule without dev bypass
     const windowCheck = await checkOrderWindow(db, false);
-    c.header("Cache-Control", "public, max-age=10, s-maxage=30, stale-while-revalidate=60");
+    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
     return c.json({ success: true, ...windowCheck });
   } catch (error) {
     console.error("Client get order window status error:", error);
@@ -260,7 +260,7 @@ clientRoutes.get("/weekly-off", async (c) => {
     const collection = db.collection<WeeklyOffDoc>(COLLECTIONS.WEEKLY_OFF);
 
     const doc = await collection.findOne({});
-    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
     return c.json({
       success: true,
       weeklyOff: doc?.days ?? ["monday"],
@@ -300,7 +300,7 @@ clientRoutes.get("/holidays", async (c) => {
       .sort({ date: 1 })
       .toArray();
 
-    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
     return c.json({ success: true, holidays: result });
   } catch (error) {
     console.error("Client get holidays error:", error);
@@ -348,7 +348,7 @@ clientRoutes.get("/config", async (c) => {
       windows: [],
     });
 
-    c.header("Cache-Control", "public, max-age=30, s-maxage=120, stale-while-revalidate=300");
+    c.header("Cache-Control", "no-cache, no-store, must-revalidate");
     return c.json({
       success: true,
       configVersion,
