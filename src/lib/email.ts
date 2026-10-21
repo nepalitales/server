@@ -364,7 +364,7 @@ export async function sendOrderConfirmationEmail(
               <p style="margin: 0 0 4px 0; font-size: 14px; line-height: 20px; color: #374151;">
                 ${fulfillmentAddress}
               </p>
-              ${order.deliveryAddress.borzoFormat.note ? `<p style="margin: 0 0 4px 0; font-size: 13px; color: #6b7280;">Note: ${order.deliveryAddress.borzoFormat.note}</p>` : ""}
+              ${order.deliveryAddress?.borzoFormat?.note ? `<p style="margin: 0 0 4px 0; font-size: 13px; color: #6b7280;">Note: ${order.deliveryAddress.borzoFormat.note}</p>` : ""}
               <p style="margin: 4px 0 0 0; font-size: 13px; color: #6b7280;">
                 Slot: <strong>${order.dispatchSlot?.label || "Tomorrow Morning"}</strong>
               </p>
