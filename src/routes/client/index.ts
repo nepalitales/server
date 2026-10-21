@@ -13,9 +13,6 @@ import {
   putEdgeAddonsCache,
 } from "../../lib/addons-cache";
 import { getOrderSettings, publicOrderSettings } from "../../lib/order-settings";
-import { getCookie } from "hono/cookie";
-import { getRedisClient, cacheGet, CACHE_KEYS } from "../../lib/redis";
-import { CLIENT_SESSION_COOKIE } from "../../middleware/client-auth";
 import type {
   ProductDoc,
   CategoryDoc,
@@ -24,52 +21,9 @@ import type {
   HolidayDoc,
   DayOfWeek,
   FaqDoc,
-  ClientSessionDoc,
-  ClientUserDoc,
 } from "../../types";
 
 const clientRoutes = new Hono<AppBindings>();
-
-const AUTHORIZED_TESTER_EMAIL = "bhavartheankit@gmail.com";
-
-async function isAuthorizedTester(c: Context<AppBindings>): Promise<boolean> {
-  const testerParam = c.req.query("tester");
-  if (testerParam === "bhavartheankit") return true;
-
-  const authHeader = c.req.header("authorization");
-  const bearerToken = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
-  const cookieToken = getCookie(c, CLIENT_SESSION_COOKIE);
-  const token = bearerToken || cookieToken;
-
-  if (!token) return false;
-
-  try {
-    const redis = getRedisClient(c.env);
-    if (redis) {
-      const cached = await cacheGet<{ userId: string; user: ClientUserDoc }>(
-        redis,
-        `${CACHE_KEYS.CLIENT_SESSION_PREFIX}${token}`,
-      );
-      if (cached?.user?.email?.toLowerCase() === AUTHORIZED_TESTER_EMAIL) return true;
-    }
-
-    const db = c.get("db");
-    const sessions = db.collection<ClientSessionDoc>(COLLECTIONS.CLIENT_SESSIONS);
-    const session = await sessions.findOne({
-      token,
-      expiresAt: { $gt: new Date() },
-    });
-    if (!session) return false;
-
-    const users = db.collection<ClientUserDoc>(COLLECTIONS.CLIENT_USERS);
-    const user = await users.findOne({ id: session.userId });
-    return user?.email?.toLowerCase() === AUTHORIZED_TESTER_EMAIL;
-  } catch {
-    return false;
-  }
-}
 
 // ─── Customer Authentication (Email OTP) ─────────────────────────
 clientRoutes.route("/auth", clientAuthRoutes);
@@ -100,13 +54,11 @@ clientRoutes.get("/products", async (c) => {
     const db = c.get("db");
     const products = db.collection<ProductDoc>(COLLECTIONS.PRODUCTS);
 
-    const isTester = await isAuthorizedTester(c);
-
-    // Only show available products to clients, hiding private test items from public customers
-    const filter: Record<string, unknown> = { isAvailable: true };
-    if (!isTester) {
-      filter.isTestOnly = { $ne: true };
-    }
+    // Only show available products to clients, hiding test-only items
+    const filter: Record<string, unknown> = {
+      isAvailable: true,
+      isTestOnly: { $ne: true },
+    };
     if (categorySlug && categorySlug !== "all") {
       filter.categorySlug = categorySlug;
     }
@@ -130,11 +82,7 @@ clientRoutes.get("/products", async (c) => {
       products.countDocuments(filter),
     ]);
 
-    if (isTester) {
-      c.header("Cache-Control", "no-cache, no-store, must-revalidate");
-    } else {
-      c.header("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=120");
-    }
+    c.header("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=120");
     return c.json({
       success: true,
       products: items,
@@ -162,14 +110,8 @@ clientRoutes.get("/products/:productId", async (c) => {
     const db = c.get("db");
     const products = db.collection<ProductDoc>(COLLECTIONS.PRODUCTS);
 
-    const isTester = await isAuthorizedTester(c);
-    const query: Record<string, unknown> = { id: productId, isAvailable: true };
-    if (!isTester) {
-      query.isTestOnly = { $ne: true };
-    }
-
     const product = await products.findOne(
-      query,
+      { id: productId, isAvailable: true, isTestOnly: { $ne: true } },
       { projection: { _id: 0, imagePublicId: 0, isAvailable: 0 } },
     );
 
@@ -177,11 +119,7 @@ clientRoutes.get("/products/:productId", async (c) => {
       return c.json({ success: false, message: "Product not found" }, 404);
     }
 
-    if (isTester) {
-      c.header("Cache-Control", "no-cache, no-store, must-revalidate");
-    } else {
-      c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
-    }
+    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     return c.json({ success: true, product });
   } catch (error) {
     console.error("Client get product error:", error);
@@ -203,11 +141,10 @@ clientRoutes.get("/categories", async (c) => {
     const categories = db.collection<CategoryDoc>(COLLECTIONS.CATEGORIES);
     const products = db.collection<ProductDoc>(COLLECTIONS.PRODUCTS);
 
-    const isTester = await isAuthorizedTester(c);
-    const productFilter: Record<string, unknown> = { isAvailable: true };
-    if (!isTester) {
-      productFilter.isTestOnly = { $ne: true };
-    }
+    const productFilter: Record<string, unknown> = {
+      isAvailable: true,
+      isTestOnly: { $ne: true },
+    };
 
     const [cats, prods] = await Promise.all([
       categories

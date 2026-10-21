@@ -513,9 +513,16 @@ export async function sendOrderStatusEmail(
       statusColor = "#dc2626";
       message = `Your order #${order.orderNumber} has been cancelled by our kitchen team. ${note ? note : `A full refund of ₹${order.totalAmount} has been initiated to your original payment method via Razorpay.`}`;
       break;
+
+    case "expired":
+      statusTitle = "Order Checkout Expired";
+      statusBadge = "Expired";
+      statusColor = "#6b7280";
+      message = `Your checkout session for order #${order.orderNumber} expired because payment was not completed. Reserved dispatch slots have been released.`;
+      break;
   }
 
-  const isCancelled = status === "cancelled_by_customer" || status === "cancelled_by_admin";
+  const isCancelled = status === "cancelled_by_customer" || status === "cancelled_by_admin" || status === "expired";
 
   let safeTrackingUrl = trackingUrl?.trim();
   if (safeTrackingUrl && !/^(https?:\/\/|tel:|mailto:)/i.test(safeTrackingUrl)) {

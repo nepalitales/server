@@ -47,6 +47,16 @@ export const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "production", "staging"])
     .default("production"),
+}).superRefine((data, ctx) => {
+  if (data.NODE_ENV === "production") {
+    if (!data.RESEND_API_KEY || data.RESEND_API_KEY.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["RESEND_API_KEY"],
+        message: "RESEND_API_KEY is required in production",
+      });
+    }
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

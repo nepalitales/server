@@ -157,40 +157,25 @@ async function handleSendOtp(c: Context<AppBindings>) {
       { upsert: true },
     );
 
-    const isLocal =
-      c.req.url.includes("localhost") ||
-      c.req.url.includes("127.0.0.1") ||
-      c.env.NODE_ENV === "development";
-    let providerName: string = "dev_simulated";
+    const isDev = c.env.NODE_ENV === "development";
 
     const sendResult = await sendEmailOtp({
       email,
       otp,
       apiKey: c.env.RESEND_API_KEY,
       fromEmail: c.env.RESEND_FROM_EMAIL,
-      isDevelopment: isLocal,
+      isDevelopment: isDev,
     });
 
     if (!sendResult.success) {
-      if (
-        isLocal ||
-        sendResult.error?.includes("resend.com/domains") ||
-        sendResult.error?.includes("only send testing emails")
-      ) {
-        console.warn("[Send OTP] Resend free testing limitation detected. Falling back to sandbox code.");
-        providerName = "dev_simulated";
-      } else {
-        return c.json(
-          {
-            success: false,
-            message: "Failed to send email verification code. Please check your email and try again.",
-            error: sendResult.error,
-          },
-          500,
-        );
-      }
-    } else {
-      providerName = sendResult.provider;
+      console.error("[Send OTP Error]:", sendResult.error);
+      return c.json(
+        {
+          success: false,
+          message: "Failed to send email verification code. Please try again later.",
+        },
+        500,
+      );
     }
 
     const existingUser = await users.findOne({ email });
@@ -201,8 +186,8 @@ async function handleSendOtp(c: Context<AppBindings>) {
       channel,
       email,
       isExistingUser: !!existingUser,
-      provider: providerName,
-      ...(isLocal || providerName === "dev_simulated" ? { devOtp: otp } : {}),
+      provider: sendResult.provider,
+      ...(isDev ? { devOtp: otp } : {}),
     });
   } catch (error) {
     console.error("Send OTP error:", error);

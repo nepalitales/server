@@ -106,8 +106,8 @@ export async function edgeCacheMiddleware(
     return;
   }
 
-  // Bypass cache if authenticated user or tester parameter is present
-  if (c.req.header("authorization") || c.req.query("tester")) {
+  // Bypass cache if authenticated user request is present
+  if (c.req.header("authorization")) {
     await next();
     return;
   }

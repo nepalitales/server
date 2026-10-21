@@ -216,7 +216,8 @@ export type OrderStatus =
   | "out_for_delivery"       // courier picked up food, on way to customer
   | "delivered"              // delivered or collected at kitchen
   | "cancelled_by_customer"  // cancelled before window ended, auto-refund initiated
-  | "cancelled_by_admin";    // cancelled by kitchen, manual refund processed
+  | "cancelled_by_admin"     // cancelled by kitchen, manual refund processed
+  | "expired";               // checkout timed out without payment, slot hold released
 
 export interface OrderItemAddon {
   addonId: string;
@@ -249,13 +250,14 @@ export interface OrderPaymentInfo {
 }
 
 export interface OrderRefundInfo {
-  status: "none" | "initiated" | "refunded" | "declined";
+  status: "none" | "initiated" | "pending" | "refunded" | "failed" | "declined";
   amount?: number;
   type?: "full" | "partial" | "decline";
   reason?: string;
   razorpayRefundId?: string;
   refundedAt?: Date;
   notes?: string;
+  error?: string;
 }
 
 export interface OrderBorzoInfo {

@@ -9,6 +9,9 @@ routes = [
 ]
 workers_dev = true
 
+[triggers]
+crons = ["*/15 * * * *"]
+
 [alias]
 whatwg-url = "./src/shims/whatwg-url.ts"
 

@@ -28,6 +28,7 @@ import {
 } from "../../lib/dispatch-windows";
 import { getRedisClient } from "../../lib/redis";
 import { generateNextOrderNumber } from "../../lib/order-sequence";
+import { confirmOrderPaymentAtomic } from "../../lib/order-payment";
 import type {
   OrderDoc,
   OrderItem,
@@ -251,16 +252,13 @@ clientOrderRoutes.post("/", async (c) => {
       }
 
       if (product.isTestOnly) {
-        const user = c.get("user");
-        if (user?.email?.toLowerCase() !== "bhavartheankit@gmail.com") {
-          return c.json(
-            {
-              success: false,
-              message: "This test product is reserved for authorized testers only.",
-            },
-            403,
-          );
-        }
+        return c.json(
+          {
+            success: false,
+            message: "Test products cannot be ordered through the customer checkout.",
+          },
+          403,
+        );
       }
 
       const subtotal = product.price * item.quantity;
@@ -526,6 +524,13 @@ clientOrderRoutes.post("/verify-payment", async (c) => {
       return c.json({ success: false, message: "Order not found" }, 404);
     }
 
+    if (razorpayOrderId !== order.payment?.razorpayOrderId) {
+      return c.json(
+        { success: false, message: "Payment does not match this order" },
+        400,
+      );
+    }
+
     if (order.status !== "pending_payment") {
       // If Razorpay Webhook already confirmed payment, return idempotent success
       if (order.status === "placed" && order.payment?.status === "paid") {
@@ -571,73 +576,35 @@ clientOrderRoutes.post("/verify-payment", async (c) => {
       );
     }
 
-    // Update to placed
-    const now = new Date();
-    await ordersCol.updateOne(
-      { id: orderId },
-      {
-        $set: {
-          status: "placed",
-          "payment.status": "paid",
-          "payment.razorpayPaymentId": razorpayPaymentId,
-          "payment.razorpaySignature": razorpaySignature,
-          "payment.paidAt": now,
-          updatedAt: now,
-        },
-        $push: {
-          timeline: {
-            status: "placed",
-            timestamp: now,
-            note: "Payment verified successfully. Order confirmed.",
-          },
-        } as any,
+    // Atomically transition to placed & execute confirmation side effects safely
+    const confirmResult = await confirmOrderPaymentAtomic({
+      db,
+      orderId,
+      razorpayPaymentId,
+      razorpaySignature,
+      source: "client_verification",
+      env: {
+        RESEND_API_KEY: c.env.RESEND_API_KEY,
+        RESEND_FROM_EMAIL: c.env.RESEND_FROM_EMAIL,
+        ADMIN_NOTIFICATION_EMAIL: c.env.ADMIN_NOTIFICATION_EMAIL,
+        NODE_ENV: c.env.NODE_ENV,
       },
-    );
-
-    // Confirm slot reservation permanently
-    if (order.dispatchDate && order.dispatchSlot?.id) {
-      await confirmSlotReservation(db, {
-        dateStr: order.dispatchDate,
-        slotId: order.dispatchSlot.id,
-        orderId: order.id,
-      });
-    }
-
-    const updatedOrder = await ordersCol.findOne({ id: orderId });
-
-    // Send itemized order confirmation email via Resend in background
-    const emailPromise = sendOrderConfirmationEmail({
-      order: updatedOrder || order,
-      apiKey: c.env.RESEND_API_KEY,
-      fromEmail: c.env.RESEND_FROM_EMAIL,
-      adminEmail: c.env.ADMIN_NOTIFICATION_EMAIL,
-      isDevelopment: isDev,
-    }).catch((e) => console.error("Failed to send order confirmation email:", e));
-
-    if (c.executionCtx?.waitUntil) {
-      c.executionCtx.waitUntil(emailPromise);
-    } else {
-      void emailPromise;
-    }
-
-    // Broadcast Real-Time SSE event to Admin Dashboard
-    await recordOrderEvent(db, {
-      type: "order_created",
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      status: "placed",
-      summary: {
-        totalAmount: order.totalAmount,
-        customerName: order.customer.name,
-        customerPhone: order.customer.phone,
-        itemsCount: order.items.length,
-      },
+      waitUntil: c.executionCtx?.waitUntil?.bind(c.executionCtx),
     });
+
+    if (!confirmResult.success && !confirmResult.order) {
+      return c.json(
+        { success: false, message: confirmResult.message || "Order confirmation failed" },
+        400,
+      );
+    }
 
     return c.json({
       success: true,
-      message: "Payment verified and order confirmed!",
-      order: updatedOrder,
+      message: confirmResult.isFirstConfirmation
+        ? "Payment verified and order confirmed!"
+        : "Payment already verified and confirmed.",
+      order: confirmResult.order,
     });
   } catch (error) {
     console.error("Verify payment error:", error);
@@ -659,7 +626,7 @@ clientOrderRoutes.get("/", async (c) => {
     const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
 
     const orders = await ordersCol
-      .find({ userId })
+      .find({ userId, status: { $ne: "pending_payment" } })
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -762,91 +729,147 @@ clientOrderRoutes.post("/:orderId/cancel", async (c) => {
     const isDev = c.env.NODE_ENV === "development";
 
     const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
-    const order = await ordersCol.findOne({ id: orderId, userId });
-
-    if (!order) {
-      return c.json({ success: false, message: "Order not found" }, 404);
-    }
-
-    if (order.status !== "placed" && order.status !== "pending_payment") {
-      return c.json(
-        {
-          success: false,
-          message: `Cannot cancel order in '${order.status}' status.`,
-        },
-        400,
-      );
-    }
-
-    // Check cancellation window
     const now = new Date();
-    if (now > new Date(order.canCustomerCancelUntil)) {
+
+    // 1. Claim cancellation atomically to prevent double-tap race conditions
+    const claimedOrder = await ordersCol.findOneAndUpdate(
+      {
+        id: orderId,
+        userId,
+        status: { $in: ["placed", "pending_payment"] },
+        canCustomerCancelUntil: { $gte: now },
+      },
+      {
+        $set: {
+          status: "cancelled_by_customer",
+          "refund.status": "pending",
+          "refund.type": "full",
+          "refund.reason": "Customer cancelled before order window closed",
+          updatedAt: now,
+        },
+        $push: {
+          timeline: {
+            status: "cancelled_by_customer",
+            timestamp: now,
+            note: "Customer cancelled order before window closed.",
+          },
+        } as any,
+      },
+      { returnDocument: "after" },
+    );
+
+    if (!claimedOrder) {
+      const existing = await ordersCol.findOne({ id: orderId, userId });
+      if (!existing) {
+        return c.json({ success: false, message: "Order not found" }, 404);
+      }
+      if (
+        existing.status === "cancelled_by_customer" ||
+        existing.status === "cancelled_by_admin"
+      ) {
+        return c.json(
+          { success: false, message: "Order has already been cancelled" },
+          400,
+        );
+      }
+      if (now > new Date(existing.canCustomerCancelUntil)) {
+        return c.json(
+          {
+            success: false,
+            message:
+              "Cancellation window has expired. The order window has closed and the kitchen has begun preparation.",
+            canCustomerCancelUntil: existing.canCustomerCancelUntil,
+          },
+          400,
+        );
+      }
       return c.json(
         {
           success: false,
-          message:
-            "Cancellation window has expired. The order window has closed and the kitchen has begun preparation.",
-          canCustomerCancelUntil: order.canCustomerCancelUntil,
+          message: `Cannot cancel order in '${existing.status}' status.`,
         },
         400,
       );
     }
 
-    // Process refund if payment was paid
+    // 2. Release dispatch slot reservation so it becomes available for other customers
+    if (claimedOrder.dispatchDate && claimedOrder.dispatchSlot?.id) {
+      await releaseSlotReservation(db, {
+        dateStr: claimedOrder.dispatchDate,
+        slotId: claimedOrder.dispatchSlot.id,
+        orderId: claimedOrder.id,
+      });
+    }
+
+    // 3. Process refund if payment was captured
+    const isPaid =
+      claimedOrder.payment?.status === "paid" &&
+      !!claimedOrder.payment?.razorpayPaymentId;
+
     let refundResult = null;
-    if (order.payment.status === "paid" && order.payment.razorpayPaymentId) {
+    let refundSuccess = false;
+
+    if (isPaid) {
       refundResult = await initiateRazorpayRefund({
-        paymentId: order.payment.razorpayPaymentId,
-        amountInInr: order.totalAmount,
+        paymentId: claimedOrder.payment.razorpayPaymentId!,
+        amountInInr: claimedOrder.totalAmount,
         reason: "Cancelled by customer before ordering window closed",
         keyId: c.env.RAZORPAY_KEY_ID,
         keySecret: c.env.RAZORPAY_KEY_SECRET,
         isDevelopment: isDev,
       });
-    }
+      refundSuccess = refundResult.success;
 
-    // Update order status
-    await ordersCol.updateOne(
-      { id: orderId },
-      {
-        $set: {
-          status: "cancelled_by_customer",
-          refund: {
-            status: refundResult?.success ? "refunded" : "none",
-            amount: order.totalAmount,
-            type: "full",
-            reason: "Customer cancelled before order window closed",
-            razorpayRefundId: refundResult?.refundId,
-            refundedAt: new Date(),
+      await ordersCol.updateOne(
+        { id: orderId },
+        {
+          $set: {
+            "refund.status": refundSuccess ? "refunded" : "failed",
+            "refund.amount": claimedOrder.totalAmount,
+            "refund.razorpayRefundId": refundResult.refundId,
+            "refund.refundedAt": refundSuccess ? new Date() : undefined,
+            "refund.error": refundResult.error,
+            updatedAt: new Date(),
           },
-          updatedAt: new Date(),
+          $push: {
+            timeline: {
+              status: "cancelled_by_customer",
+              timestamp: new Date(),
+              note: refundSuccess
+                ? "Full refund processed successfully via Razorpay."
+                : `Refund initiation failed (${refundResult.error || "gateway error"}). Queued for retry.`,
+            },
+          } as any,
         },
-        $push: {
-          timeline: {
-            status: "cancelled_by_customer",
-            timestamp: new Date(),
-            note: "Customer cancelled order before window closed. Full refund initiated.",
+      );
+    } else {
+      // Order was in pending_payment status, no money was captured
+      await ordersCol.updateOne(
+        { id: orderId },
+        {
+          $set: {
+            "refund.status": "none",
+            "refund.amount": 0,
+            updatedAt: new Date(),
           },
-        } as any,
-      },
-    );
-
-    // Release dispatch slot reservation so it becomes available for other customers
-    if (order.dispatchDate && order.dispatchSlot?.id) {
-      await releaseSlotReservation(db, {
-        dateStr: order.dispatchDate,
-        slotId: order.dispatchSlot.id,
-        orderId: order.id,
-      });
+        },
+      );
     }
 
     const updated = await ordersCol.findOne({ id: orderId });
 
-    // Send cancellation & refund email notice via Resend to customer and kitchen admin
+    // 4. Send cancellation & refund email notice via Resend in background
+    let customerNote = "Order cancelled by customer before ordering window closed.";
+    if (isPaid) {
+      customerNote = refundSuccess
+        ? "Cancelled by customer before ordering window closed. Full refund initiated."
+        : "Cancelled by customer. Refund encountered a gateway delay and is queued for processing.";
+    }
+
     const cancelEmailPromise = sendOrderStatusEmail({
-      order: updated || order,
+      order: updated || claimedOrder,
       status: "cancelled_by_customer",
-      note: "Cancelled by customer before ordering window closed. Full refund initiated.",
+      note: customerNote,
       apiKey: c.env.RESEND_API_KEY,
       fromEmail: c.env.RESEND_FROM_EMAIL,
       adminEmail: c.env.ADMIN_NOTIFICATION_EMAIL,
@@ -859,22 +882,28 @@ clientOrderRoutes.post("/:orderId/cancel", async (c) => {
       void cancelEmailPromise;
     }
 
-    // Broadcast SSE update to Admin Dashboard
+    // 5. Broadcast SSE update to Admin Dashboard
     await recordOrderEvent(db, {
       type: "order_cancelled",
-      orderId: order.id,
-      orderNumber: order.orderNumber,
+      orderId: claimedOrder.id,
+      orderNumber: claimedOrder.orderNumber,
       status: "cancelled_by_customer",
       summary: {
         reason: "Cancelled by customer before order window closed",
-        refundAmount: order.totalAmount,
+        refundAmount: isPaid ? claimedOrder.totalAmount : 0,
       },
     });
 
+    const userMessage = isPaid
+      ? refundSuccess
+        ? "Order cancelled successfully. Full refund has been initiated to your payment method."
+        : "Order cancelled successfully. Refund is being processed and will reflect shortly."
+      : "Order cancelled successfully.";
+
     return c.json({
       success: true,
-      message: "Order cancelled successfully. Full refund has been initiated.",
-      order: updated,
+      message: userMessage,
+      order: updated || claimedOrder,
       refund: refundResult,
     });
   } catch (error) {

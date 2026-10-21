@@ -3,6 +3,8 @@ import type { AppBindings } from "../../config/app";
 import { COLLECTIONS } from "../../lib/db";
 import { authMiddleware } from "../../middleware/auth";
 import { initiateRazorpayRefund } from "../../lib/razorpay";
+import { retryFailedRefunds } from "../../lib/refund-retry";
+import { cleanupExpiredPendingOrders } from "../../lib/order-cleanup";
 import { recordOrderEvent, getOrderEventsSince } from "../../lib/order-events";
 import { releaseSlotReservation } from "../../lib/dispatch-windows";
 import { sendOrderStatusEmail } from "../../lib/email";
@@ -203,9 +205,14 @@ adminOrderRoutes.get("/", async (c) => {
     if (status && status !== "all") {
       if (status === "out_for_delivery") {
         filter.status = { $in: ["porter_booked", "out_for_delivery"] };
+      } else if (status === "all_with_pending") {
+        // Explicitly include all statuses including pending_payment
       } else {
         filter.status = status;
       }
+    } else {
+      // Default: exclude unpaid abandoned checkouts from the main orders table
+      filter.status = { $ne: "pending_payment" };
     }
 
     if (dateQuery && /^\d{4}-\d{2}-\d{2}$/.test(dateQuery)) {
@@ -294,6 +301,48 @@ adminOrderRoutes.post("/auto-prepare", async (c) => {
     });
   } catch (error) {
     console.error("Auto-prepare orders error:", error);
+    return c.json({ success: false, message: "Internal server error" }, 500);
+  }
+});
+
+/**
+ * POST /api/admin/orders/retry-refunds
+ *
+ * Explicit trigger (e.g. from admin dashboard button or external cron) to retry all
+ * failed or pending refunds for cancelled orders.
+ */
+adminOrderRoutes.post("/retry-refunds", async (c) => {
+  try {
+    const db = c.get("db");
+    const result = await retryFailedRefunds(db, c.env);
+    return c.json({
+      success: true,
+      message: `Refund retry process completed. Attempted: ${result.attempted}, Succeeded: ${result.succeeded}, Failed: ${result.failed}`,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Retry refunds error:", error);
+    return c.json({ success: false, message: "Internal server error" }, 500);
+  }
+});
+
+/**
+ * POST /api/admin/orders/cleanup-expired
+ *
+ * Explicit trigger (e.g. from admin dashboard button) to expire abandoned checkouts (> 15 minutes)
+ * and release their dispatch slot holds.
+ */
+adminOrderRoutes.post("/cleanup-expired", async (c) => {
+  try {
+    const db = c.get("db");
+    const result = await cleanupExpiredPendingOrders(db);
+    return c.json({
+      success: true,
+      message: `Cleaned up ${result.expiredCount} expired orders and released ${result.slotsReleased} slot holds.`,
+      result,
+    });
+  } catch (error) {
+    console.error("Cleanup expired orders error:", error);
     return c.json({ success: false, message: "Internal server error" }, 500);
   }
 });
@@ -1079,12 +1128,18 @@ adminOrderRoutes.post("/:orderId/cancel", async (c) => {
         $set: {
           status: "cancelled_by_admin",
           refund: {
-            status: refundType === "decline" ? "declined" : "refunded",
+            status:
+              refundType === "decline"
+                ? "declined"
+                : refundResult?.success
+                  ? "refunded"
+                  : "failed",
             amount: effectiveRefundAmount,
             type: refundType,
             reason,
             razorpayRefundId: refundResult?.refundId,
-            refundedAt: refundType === "decline" ? undefined : now,
+            refundedAt: refundResult?.success ? now : undefined,
+            error: refundResult?.error,
             notes,
           },
           updatedAt: now,
