@@ -25,55 +25,6 @@ const adminOrderRoutes = new Hono<AppBindings>();
 // All admin order endpoints require admin authentication
 adminOrderRoutes.use("*", authMiddleware);
 
-/**
- * Automatically transitions all placed orders whose cancellation cutoff
- * (order window closing time) has passed into "preparing" status.
- */
-export async function autoTransitionOrdersToPreparing(db: Db): Promise<number> {
-  const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
-  const now = new Date();
-
-  const expiredPlacedOrders = await ordersCol
-    .find({
-      status: "placed",
-      canCustomerCancelUntil: { $lte: now },
-    })
-    .toArray();
-
-  if (expiredPlacedOrders.length === 0) return 0;
-
-  await Promise.all(
-    expiredPlacedOrders.map(async (order) => {
-      await ordersCol.updateOne(
-        { id: order.id },
-        {
-          $set: {
-            status: "preparing",
-            updatedAt: now,
-          },
-          $push: {
-            timeline: {
-              status: "preparing",
-              timestamp: now,
-              note: "Order window closed. Order automatically moved to kitchen preparation.",
-            },
-          } as any,
-        },
-      );
-
-      await recordOrderEvent(db, {
-        type: "order_status_updated",
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        status: "preparing",
-        summary: { autoTransition: true, reason: "Order window closed" },
-      });
-    }),
-  );
-
-  return expiredPlacedOrders.length;
-}
-
 // ─── 1. Real-Time Admin SSE Stream ────────────────────────────────
 
 
@@ -284,26 +235,7 @@ adminOrderRoutes.get("/", async (c) => {
   }
 });
 
-/**
- * POST /api/admin/orders/auto-prepare
- *
- * Explicit trigger (e.g. from cron or dashboard button) to transition all placed orders
- * whose cancellation cutoff has passed into "preparing" status.
- */
-adminOrderRoutes.post("/auto-prepare", async (c) => {
-  try {
-    const db = c.get("db");
-    const count = await autoTransitionOrdersToPreparing(db);
-    return c.json({
-      success: true,
-      message: `Successfully transitioned ${count} order(s) to 'preparing'`,
-      count,
-    });
-  } catch (error) {
-    console.error("Auto-prepare orders error:", error);
-    return c.json({ success: false, message: "Internal server error" }, 500);
-  }
-});
+
 
 /**
  * POST /api/admin/orders/retry-refunds

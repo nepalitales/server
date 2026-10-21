@@ -213,18 +213,15 @@ export default withSentry(
               const { getDb } = await import("./lib/db");
               const { retryFailedRefunds } = await import("./lib/refund-retry");
               const { cleanupExpiredPendingOrders } = await import("./lib/order-cleanup");
-              const { autoTransitionOrdersToPreparing } = await import("./routes/admin/orders");
               const { db, client } = await getDb(env.MONGODB_URI, env.MONGODB_DB_NAME);
               try {
-                const [refundRes, cleanupRes, autoTransRes] = await Promise.allSettled([
+                const [refundRes, cleanupRes] = await Promise.allSettled([
                   retryFailedRefunds(db, env),
                   cleanupExpiredPendingOrders(db),
-                  autoTransitionOrdersToPreparing(db),
                 ]);
                 console.log("[Scheduled Cron] Run completed:", {
                   refunds: refundRes.status === "fulfilled" ? refundRes.value : refundRes.reason,
                   cleanup: cleanupRes.status === "fulfilled" ? cleanupRes.value : cleanupRes.reason,
-                  autoTransition: autoTransRes.status === "fulfilled" ? autoTransRes.value : autoTransRes.reason,
                 });
               } finally {
                 await client.close().catch(() => {});
