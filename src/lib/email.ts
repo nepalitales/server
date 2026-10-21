@@ -439,6 +439,23 @@ export async function sendOrderConfirmationEmail(
 
 // ─── 3. Real-time Order Status Updates (Courier / Delivery) ─────────────
 
+/**
+ * Daily Email Quota Optimization (Resend 100 emails/day free tier)
+ *
+ * Mandatory emails kept active:
+ *  - confirmed: Sent upon order payment with PDF bill
+ *  - ready: ONLY for self-pickup orders ("Ready for Pickup!")
+ *  - out_for_delivery / porter_booked: Courier on the way for delivery orders
+ *  - delivered: Order delivered notification
+ *  - cancelled: Customer / Admin cancellation & refund notice
+ *
+ * Non-mandatory emails disabled to save quota (templates & copy kept intact):
+ *  - cooking (status: "preparing")
+ *  - packed (status: "ready" for delivery orders)
+ */
+export const DEFAULT_ENABLE_COOKING_EMAIL = false;
+export const DEFAULT_ENABLE_PACKED_DELIVERY_EMAIL = false;
+
 export interface SendOrderStatusEmailOptions {
   order: OrderDoc;
   status: OrderStatus;
@@ -448,6 +465,8 @@ export interface SendOrderStatusEmailOptions {
   fromEmail?: string;
   adminEmail?: string;
   isDevelopment?: boolean;
+  enableCookingEmail?: boolean;
+  enablePackedDeliveryEmail?: boolean;
 }
 
 export async function sendOrderStatusEmail(
@@ -455,6 +474,34 @@ export async function sendOrderStatusEmail(
 ): Promise<SendEmailResult> {
   const { order, status, trackingUrl, note, apiKey, fromEmail, adminEmail, isDevelopment } = options;
   const customerEmail = order.customer?.email;
+
+  const isPickup = (order.orderType || "delivery") === "pickup";
+  const allowCooking = options.enableCookingEmail ?? DEFAULT_ENABLE_COOKING_EMAIL;
+  const allowPackedDelivery = options.enablePackedDeliveryEmail ?? DEFAULT_ENABLE_PACKED_DELIVERY_EMAIL;
+
+  // Quota Optimization: Skip non-mandatory status emails to stay within Resend's 100 emails/day limit.
+  // The full HTML templates, styling, and copy below are preserved for seamless re-enabling.
+  if (status === "preparing" && !allowCooking) {
+    if (isDevelopment) {
+      console.log(`[Resend Quota Saver] Skipped "Cooking" email for order #${order.orderNumber} (quota optimization).`);
+    }
+    return {
+      success: true,
+      provider: apiKey ? "resend" : "dev_simulated",
+      id: "skipped_cooking_quota_save",
+    };
+  }
+
+  if (status === "ready" && !isPickup && !allowPackedDelivery) {
+    if (isDevelopment) {
+      console.log(`[Resend Quota Saver] Skipped "Packed (Delivery)" email for order #${order.orderNumber} (quota optimization).`);
+    }
+    return {
+      success: true,
+      provider: apiKey ? "resend" : "dev_simulated",
+      id: "skipped_packed_delivery_quota_save",
+    };
+  }
 
   let statusTitle = "Order Status Updated";
   let statusBadge = "Update";

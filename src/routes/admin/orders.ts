@@ -919,7 +919,7 @@ adminOrderRoutes.patch("/:orderId/status", async (c) => {
         success: true,
         message: isPickup
           ? "Order marked ready for pickup. Customer has been emailed."
-          : "Order marked ready. Customer has been emailed.",
+          : "Order marked ready.",
         order: updated,
       });
     }
