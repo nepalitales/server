@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-A comprehensive security and operational audit of the Nepali Tales API identified multiple critical vulnerabilities and concurrency defects across payment processing, authentication, checkout slot reservations, and webhook handling. All identified issues have been addressed with atomic MongoDB operations, Upstash Redis distributed locks and deduplication, strict environment validation, and automated background crons.
+A comprehensive security, concurrency, and operational audit of the Nepali Tales API identified multiple critical vulnerabilities and race conditions across payment processing, authentication, slot reservation lifecycle, and webhook handling. All identified issues have been permanently remediated using atomic MongoDB compare-and-swap operations, error-resilient distributed Redis deduplication, strict environment validation, and automated background crons.
 
 ---
 
@@ -18,12 +18,13 @@ A comprehensive security and operational audit of the Nepali Tales API identifie
 |---|---|---|---|---|
 | **1** | **Critical** | Payment Security | Order mismatch / payment bypass in `POST /verify-payment` | **Fixed** |
 | **2** | **Critical** | Auth / Account Takeover | OTP leaked in API response via `?x=localhost` & Resend fallback | **Fixed** |
-| **3** | **Critical** | Financial / Race Condition | Cancellation double-tap refund loss & unrefunded in-flight captures | **Fixed** |
+| **3** | **Critical** | Financial / Race Condition | Cancellation double-tap refund loss, in-flight captures & double-refund guard | **Fixed** |
 | **4** | **High** | Access Control | Tester backdoor (`?tester=bhavartheankit`) & hardcoded tester email | **Fixed** |
 | **5** | **High** | Concurrency / Race Condition | `verify-payment` vs. Razorpay webhook double-confirmation race | **Fixed** |
-| **6** | **High** | Webhook Reliability | Missing webhook deduplication on `x-razorpay-event-id` | **Fixed** |
+| **6** | **High** | Webhook Reliability | Resilient webhook deduplication on `x-razorpay-event-id` (safe against DB failures) | **Fixed** |
 | **7** | **Medium** | Webhook Coverage | Unhandled `refund.processed` webhook event | **Fixed** |
-| **8** | **High** | Operational / Inventory | Abandoned `pending_payment` orders locking slots & cluttering admin | **Fixed** |
+| **8** | **High** | Operational / Inventory | Abandoned checkouts & `expired` status handled across all lists, aggregations & capacity checks | **Fixed** |
+| **9** | **High** | Concurrency / Inventory | CAS-first cleanup race prevention in `cleanupExpiredPendingOrders` | **Fixed** |
 
 ---
 
@@ -76,28 +77,20 @@ const isLocal = c.req.url.includes("localhost") || ...;
    ...(isDevelopment ? { devOtp: otp } : {})
    ```
 2. **Purged Sandbox Leak:** Deleted the sandbox fallback branch that leaked `devOtp`.
-3. **Production Startup Assertion:** In [`src/config/env.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/config/env.ts), added Zod `.superRefine` ensuring the server refuses to boot in production if `RESEND_API_KEY` is unset:
-   ```typescript
-   if (data.NODE_ENV === "production" && !data.RESEND_API_KEY) {
-     ctx.addIssue({
-       code: z.ZodIssueCode.custom,
-       message: "RESEND_API_KEY is required in production environment",
-       path: ["RESEND_API_KEY"],
-     });
-   }
-   ```
+3. **Production Startup Assertion:** In [`src/config/env.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/config/env.ts), added Zod `.superRefine` ensuring the server refuses to boot in production if `RESEND_API_KEY` is unset.
 4. **Sanitized Error Responses:** Masked external delivery failures with a generic message: `"Failed to deliver verification code. Please try again later."`
 
 ---
 
-### Issue 3: Double-Tap Cancellation Race & Lost In-Flight Refunds
+### Issue 3: Double-Tap Cancellation Race, In-Flight Refunds & Double-Refund Guard
 
-* **Files Modified:** [`src/routes/client/orders.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/client/orders.ts), [`src/routes/webhooks/razorpay.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/webhooks/razorpay.ts), [`src/lib/refund-retry.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/refund-retry.ts)
+* **Files Modified:** [`src/routes/client/orders.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/client/orders.ts), [`src/routes/webhooks/razorpay.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/webhooks/razorpay.ts), [`src/lib/razorpay.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/razorpay.ts), [`src/lib/refund-retry.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/refund-retry.ts)
 * **Severity:** **Critical**
 
 #### Vulnerability Details
 1. `POST /api/client/orders/:id/cancel` performed a non-atomic read-check-act. Rapid double-clicking triggered two parallel refund calls to Razorpay; the second call failed and overwrote `refund.status` with `"none"`.
-2. If a customer cancelled an order while their payment was in-flight, the order was marked cancelled. When Razorpay later delivered the `payment.captured` webhook, it was ignored because it only handled orders with status `"pending_payment"`. Money was captured with no refund issued.
+2. If a customer cancelled an order while their payment was in-flight, when Razorpay delivered `payment.captured`, it was ignored because the webhook only looked for orders in `pending_payment` status.
+3. If a customer cancelled and received an immediate refund, a subsequent or retried webhook triggered a second refund attempt. Razorpay rejected it as already refunded, overwriting `refund.status` from `"refunded"` to `"failed"`, causing the cron to retry every 15 minutes endlessly.
 
 #### Remediation
 1. **Atomic Cancellation Claim:** Replaced `findOne` + `updateOne` with an atomic compare-and-swap:
@@ -108,9 +101,14 @@ const isLocal = c.req.url.includes("localhost") || ...;
      { returnDocument: "after" }
    );
    ```
-   Only the first concurrent request claims the order. A second request receives `null` and returns HTTP 409.
-2. **Auto-Refund on In-Flight Webhooks:** In `razorpay.ts`, if `payment.captured` arrives for an order in `cancelled_by_customer`, `cancelled_by_admin`, or `expired` status, the server immediately triggers `initiateRazorpayRefund()` and records the refund.
-3. **Automated Refund Retry Engine:** Implemented [`src/lib/refund-retry.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/refund-retry.ts), which queries all orders with `refund.status: { $in: ["failed", "pending"] }` and retries Razorpay refunds automatically. Wired into Cloudflare Workers cron (`scheduled` handler) and exposed via `POST /api/admin/orders/retry-refunds`.
+2. **Double-Refund Guard in Webhook:** In [`src/routes/webhooks/razorpay.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/webhooks/razorpay.ts), if `order.refund?.status === "refunded"` or `order.refund?.razorpayRefundId` is set, the second refund is safely skipped.
+3. **Idempotent Refund Handling in Razorpay Client:** In [`src/lib/razorpay.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/razorpay.ts), if Razorpay returns `"already been refunded"`, it is treated as an idempotent success:
+   ```typescript
+   if (typeof msg === "string" && /already been (fully )?refunded|payment.*already.*refund/i.test(msg)) {
+     return { success: true, refundId: data?.error?.metadata?.refund_id || `rfnd_verified_${paymentId}`, status: "processed" };
+   }
+   ```
+4. **Automated Refund Retry Engine:** [`src/lib/refund-retry.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/refund-retry.ts) queries orders in `["cancelled_by_customer", "cancelled_by_admin", "expired"]` with `refund.status: { $in: ["failed", "pending"] }` and retries them automatically via cron.
 
 ---
 
@@ -138,60 +136,37 @@ The query parameter `?tester=bhavartheankit` bypassed catalog filtering, showing
 * **Severity:** **High**
 
 #### Vulnerability Details
-Both `POST /verify-payment` and `POST /webhooks/razorpay` (`payment.captured`) checked `status === "pending_payment"` and updated to `"placed"`. When the customer returned to the browser at the exact millisecond Razorpay dispatched its webhook, both passed the status check, resulting in:
-- Two itemized confirmation emails sent to the customer via Resend.
-- Two `order_created` events emitted to the admin dashboard.
-- Potential race where slot reservation was never confirmed if one process errored midway.
+Both `POST /verify-payment` and `POST /webhooks/razorpay` (`payment.captured`) checked `status === "pending_payment"` and updated to `"placed"`. When the customer returned to the browser at the exact millisecond Razorpay dispatched its webhook, both passed the status check, resulting in duplicate confirmation emails via Resend and duplicate `order_created` events sent to the admin dashboard.
 
 #### Remediation
 Created [`src/lib/order-payment.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/order-payment.ts) with `confirmOrderPaymentAtomic()`:
-```typescript
-const updatedDoc = await ordersCol.findOneAndUpdate(
-  { id: orderId, status: "pending_payment" },
-  {
-    $set: {
-      status: "placed",
-      "payment.status": "paid",
-      "payment.razorpayPaymentId": razorpayPaymentId,
-      "payment.paidAt": now,
-      updatedAt: now,
-    },
-    $push: { timeline: { status: "placed", timestamp: now, note: ... } },
-  },
-  { returnDocument: "after" }
-);
-```
-- **Atomicity:** Exactly **one** caller gets `updatedDoc`. Only this winner calls `confirmSlotReservation()`, sends the email via `waitUntil`, and emits the SSE dashboard event.
+- **Atomicity:** Uses atomic `findOneAndUpdate({ id: orderId, status: "pending_payment" })`. Exactly **one** caller gets `updatedDoc`. Only this winner calls `confirmSlotReservation()`, sends the email via `waitUntil`, and emits the SSE dashboard event.
 - **Idempotency:** The losing caller detects the order is already `"placed"` and returns success immediately with no duplicate side effects.
 
 ---
 
-### Issue 6: Razorpay Webhook Deduplication via Upstash Redis
+### Issue 6: Resilient Webhook Deduplication via Upstash Redis
 
-* **File Modified:** [`src/routes/webhooks/razorpay.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/webhooks/razorpay.ts#L48-L62)
+* **File Modified:** [`src/routes/webhooks/razorpay.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/webhooks/razorpay.ts)
 * **Severity:** **High**
 
 #### Vulnerability Details
-Razorpay retries webhooks on transient network lag. Without deduplication, duplicate requests triggered redundant database lookups and processing.
+If a deduplication key `rzp:evt:<id>` was set *before* processing, any transient MongoDB exception or network hiccup would cause Razorpay's retry to be rejected with `"Duplicate webhook event already processed"`. A lost `payment.captured` event on an expired order would result in money being captured with no refund.
 
 #### Remediation
-Added atomic distributed deduplication in Upstash Redis:
-```typescript
-const eventId = c.req.header("x-razorpay-event-id") || payload.id;
-const redis = getRedisClient(c.env);
-if (redis && eventId) {
-  const acquired = await redis.set(`rzp:evt:${eventId}`, "1", { nx: true, ex: 86400 });
-  if (!acquired) {
-    return c.json({ success: true, message: "Duplicate webhook event already processed" });
-  }
-}
-```
+1. **Check First, Set on Success:** Webhook deduplication now checks if the event was already successfully processed:
+   ```typescript
+   const alreadyProcessed = await redis.get(dedupKey);
+   if (alreadyProcessed) return c.json({ success: true, message: "Duplicate webhook event already processed" });
+   ```
+2. **Set After Execution:** The Redis key is only written (`set(dedupKey, "1", { ex: 86400 })`) at the very end of successful processing.
+3. **Delete on Catch:** In the `catch (error)` block, `await redis.del(dedupKey)` is called so that Razorpay's automatic retries will be accepted and processed.
 
 ---
 
 ### Issue 7: Handled Missing `refund.processed` Webhook Event
 
-* **File Modified:** [`src/routes/webhooks/razorpay.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/webhooks/razorpay.ts#L187-L242)
+* **File Modified:** [`src/routes/webhooks/razorpay.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/webhooks/razorpay.ts)
 * **Severity:** **Medium**
 
 #### Vulnerability Details
@@ -204,30 +179,63 @@ Added the `refund.processed` handler:
 
 ---
 
-### Issue 8: Dead `pending_payment` Orders Locking Slots & Polluting Admin Panel
+### Issue 8: Comprehensive `expired` Status Handling Across Queries, Aggregations & Capacity
 
-* **Files Created/Modified:** [`src/lib/order-cleanup.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/order-cleanup.ts), [`src/routes/admin/orders.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/admin/orders.ts), [`src/index.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/index.ts), [`src/routes/client/orders.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/client/orders.ts), [`src/types/index.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/types/index.ts)
-* **Severity:** **High (Operational / Inventory)**
+* **Files Modified:** [`src/routes/admin/orders.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/admin/orders.ts), [`src/routes/client/orders.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/client/orders.ts), [`src/lib/order-window.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/order-window.ts)
+* **Severity:** **High (Operational / Financial Accuracy)**
 
 #### Vulnerability Details
-When users created an order but abandoned the Razorpay payment modal, the order remained in `pending_payment` status forever:
-1. It held active capacity in `dispatch_slot_buckets`, preventing paying customers from booking that dispatch window.
-2. In `GET /api/admin/orders`, default queries without a status filter returned all documents, cluttering the admin orders table with ghost unpaid orders.
-3. In `GET /api/client/orders`, customers saw abandoned checkout attempts in their past orders list.
+1. Revenue and Average Order Value aggregations in `admin/orders.ts` excluded `pending_payment` but not `expired`, causing unpaid orders to inflate revenue statistics.
+2. `order-window.ts` counted `expired` orders against the window's `maxOrders` cap, causing abandoned checkouts to artificially lock cooking window capacity.
+3. Default admin order listing and customer history queries only hid `pending_payment`, so expired checkouts appeared in both.
 
 #### Remediation
-1. **Added `"expired"` Status:** Extended `OrderStatus` in `src/types/index.ts` to include `"expired"`.
-2. **Automated Slot Release & Order Expiration ([`order-cleanup.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/order-cleanup.ts)):**
-   - Finds `pending_payment` orders older than 15 minutes or whose `slotHoldExpiresAt` has passed.
-   - Calls `releaseSlotReservation(db, ...)` to free the capacity in `dispatch_slot_buckets`.
-   - Transitions orders to `"expired"` with note *"Checkout session expired (unpaid after 15 minutes). Reserved dispatch slot released."*
-3. **Scheduled Cron Integration ([`index.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/index.ts)):**
-   - `scheduled` cron executes `cleanupExpiredPendingOrders(db)` every 15 minutes alongside refund retries and kitchen cutoff transitions.
-4. **Admin UI Filtering ([`admin/orders.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/admin/orders.ts)):**
-   - Main orders table defaults to `{ status: { $ne: "pending_payment" } }`. Admin table only displays confirmed or active orders. Admins can still explicitly query `?status=pending_payment` if needed.
-   - Added manual trigger endpoint: `POST /api/admin/orders/cleanup-expired`.
-5. **Customer Orders History ([`client/orders.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/routes/client/orders.ts)):**
-   - Filtered out `pending_payment` orders from `GET /api/client/orders` so customers only see finalized orders.
+1. **Admin Orders Query Filter:** Default filter now excludes both:
+   ```typescript
+   filter.status = { $nin: ["pending_payment", "expired"] };
+   ```
+2. **Customer Order History:**
+   ```typescript
+   ordersCol.find({ userId, status: { $nin: ["pending_payment", "expired"] } })
+   ```
+3. **Reports & Revenue Aggregations:** Excludes `expired` from `revenueAgg`, `topProductsAgg`, `totalOrdersCount`, and `timelineRevenueAgg`:
+   ```typescript
+   status: { $nin: ["cancelled_by_customer", "cancelled_by_admin", "pending_payment", "expired"] }
+   ```
+4. **Order Window Capacity Calculation:** In [`src/lib/order-window.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/order-window.ts#L370-L377), `expired` and `pending_payment` orders are excluded from the `maxOrders` count.
+
+---
+
+### Issue 9: CAS-First Cleanup Race Prevention in `cleanupExpiredPendingOrders`
+
+* **File Modified:** [`src/lib/order-cleanup.ts`](file:///Users/ankitbhavarthe/kairos-artifex/nt/server/src/lib/order-cleanup.ts)
+* **Severity:** **High (Inventory / Overbooking Prevention)**
+
+#### Vulnerability Details
+If the cleanup routine released the slot hold first and then marked the order as `expired`, a payment confirmation completing at that exact millisecond would leave the order as `placed` while its slot hold was freed, leading to kitchen overbooking.
+
+#### Remediation
+The cleanup routine now executes the **atomic compare-and-swap FIRST**:
+```typescript
+const expiredDoc = await ordersCol.findOneAndUpdate(
+  { id: order.id, status: "pending_payment" },
+  {
+    $set: { status: "expired", "payment.status": "failed", updatedAt: now },
+    $push: { timeline: { status: "expired", timestamp: now, note: ... } },
+  },
+  { returnDocument: "after" },
+);
+
+// ONLY release slot if this cleanup runner won the state transition:
+if (expiredDoc && expiredDoc.dispatchDate && expiredDoc.dispatchSlot?.id) {
+  await releaseSlotReservation(db, {
+    dateStr: expiredDoc.dispatchDate,
+    slotId: expiredDoc.dispatchSlot.id,
+    orderId: expiredDoc.id,
+  });
+}
+```
+If a payment completed concurrently, `findOneAndUpdate` returns `null`, the order remains `placed`, and its dispatch slot reservation is **never released**.
 
 ---
 

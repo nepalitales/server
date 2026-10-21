@@ -13,9 +13,12 @@ export interface OrderCleanupResult {
  * Sweeps for abandoned "pending_payment" checkout orders older than 15 minutes
  * or whose slot reservation hold time has passed.
  *
- * 1. Releases the slot hold in `dispatch_slot_buckets` so the cooking window
- *    capacity is immediately restored for other paying customers.
- * 2. Marks the order as "expired" (payment failed / session timed out).
+ * RACE PREVENTION ARCHITECTURE:
+ * 1. Atomically transitions the order to "expired" via compare-and-swap FIRST.
+ * 2. ONLY releases the dispatch slot reservation hold IF the atomic transition succeeded.
+ *    If a concurrent payment completed at this exact millisecond, `findOneAndUpdate` returns
+ *    null (because the status is now "placed"), guaranteeing that a paying customer's slot
+ *    is NEVER released or overbooked.
  */
 export async function cleanupExpiredPendingOrders(
   db: Db,
@@ -25,8 +28,8 @@ export async function cleanupExpiredPendingOrders(
   const now = new Date();
   const cutoffTime = new Date(now.getTime() - maxAgeMinutes * 60 * 1000);
 
-  // Find pending_payment orders where slot hold expired or older than cutoff
-  const expiredOrders = await ordersCol
+  // Find candidate pending_payment orders where slot hold expired or older than cutoff
+  const candidateOrders = await ordersCol
     .find({
       status: "pending_payment",
       $or: [
@@ -37,30 +40,17 @@ export async function cleanupExpiredPendingOrders(
     .limit(100)
     .toArray();
 
-  if (expiredOrders.length === 0) {
+  if (candidateOrders.length === 0) {
     return { expiredCount: 0, slotsReleased: 0, orderIds: [] };
   }
 
   let slotsReleased = 0;
   const processedOrderIds: string[] = [];
 
-  for (const order of expiredOrders) {
-    // 1. Release slot hold from dispatch_slot_buckets
-    if (order.dispatchDate && order.dispatchSlot?.id) {
-      try {
-        const released = await releaseSlotReservation(db, {
-          dateStr: order.dispatchDate,
-          slotId: order.dispatchSlot.id,
-          orderId: order.id,
-        });
-        if (released) slotsReleased++;
-      } catch (err) {
-        console.error(`[OrderCleanup]: Failed to release slot for order ${order.id}:`, err);
-      }
-    }
-
-    // 2. Atomically transition from pending_payment to expired
-    const res = await ordersCol.updateOne(
+  for (const order of candidateOrders) {
+    // 1. ATOMIC COMPARE-AND-SWAP FIRST:
+    // Only transitions if the order is STILL in "pending_payment" status right now.
+    const expiredDoc = await ordersCol.findOneAndUpdate(
       { id: order.id, status: "pending_payment" },
       {
         $set: {
@@ -72,14 +62,30 @@ export async function cleanupExpiredPendingOrders(
           timeline: {
             status: "expired",
             timestamp: now,
-            note: "Checkout session expired (unpaid after 15 minutes). Reserved dispatch slot released.",
+            note: "Checkout session expired (unpaid after timeout). Reserved dispatch slot released.",
           },
         } as any,
       },
+      { returnDocument: "after" },
     );
 
-    if (res.modifiedCount > 0) {
-      processedOrderIds.push(order.id);
+    // 2. RELEASE SLOT ONLY IF THIS CLEANUP RUNNER WON THE TRANSITION:
+    // If payment confirmed concurrently, expiredDoc is null and the slot is PRESERVED.
+    if (expiredDoc) {
+      processedOrderIds.push(expiredDoc.id);
+
+      if (expiredDoc.dispatchDate && expiredDoc.dispatchSlot?.id) {
+        try {
+          const released = await releaseSlotReservation(db, {
+            dateStr: expiredDoc.dispatchDate,
+            slotId: expiredDoc.dispatchSlot.id,
+            orderId: expiredDoc.id,
+          });
+          if (released) slotsReleased++;
+        } catch (err) {
+          console.error(`[OrderCleanup]: Failed to release slot for order ${expiredDoc.id}:`, err);
+        }
+      }
     }
   }
 

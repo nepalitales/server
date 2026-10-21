@@ -21,6 +21,9 @@ const razorpayWebhookRoutes = new Hono<AppBindings>();
  * - refund.processed: tracks refund completion
  */
 razorpayWebhookRoutes.post("/", async (c) => {
+  const redis = getRedisClient(c.env);
+  let dedupKey: string | null = null;
+
   try {
     const rawBody = await c.req.text();
     const signature = c.req.header("x-razorpay-signature") || "";
@@ -46,17 +49,22 @@ razorpayWebhookRoutes.post("/", async (c) => {
 
     console.log(`[Razorpay Webhook]: Received event '${event}' (${eventId || "no-id"})`);
 
-    // Webhook Deduplication: Prevent duplicate processing of the same Razorpay event ID
-    const redis = getRedisClient(c.env);
-    if (redis && eventId) {
-      try {
-        const acquired = await redis.set(`rzp:evt:${eventId}`, "1", { nx: true, ex: 86400 });
-        if (!acquired) {
-          console.log(`[Razorpay Webhook]: Duplicate event ${eventId} (${event}) skipped.`);
-          return c.json({ success: true, message: "Duplicate webhook event already processed" });
+    // Webhook Deduplication Check:
+    // Check if this event was already successfully processed.
+    // NOTE: We only SET this key upon successful completion so that transient DB failures
+    // allow Razorpay retries to be re-processed.
+    if (eventId) {
+      dedupKey = `rzp:evt:${eventId}`;
+      if (redis) {
+        try {
+          const alreadyProcessed = await redis.get(dedupKey);
+          if (alreadyProcessed) {
+            console.log(`[Razorpay Webhook]: Event ${eventId} (${event}) already successfully processed. Skipping duplicate.`);
+            return c.json({ success: true, message: "Duplicate webhook event already processed" });
+          }
+        } catch (redisErr) {
+          console.warn("[Razorpay Webhook]: Redis deduplication check error:", redisErr);
         }
-      } catch (redisErr) {
-        console.warn("[Razorpay Webhook]: Redis deduplication check error:", redisErr);
       }
     }
 
@@ -98,62 +106,82 @@ razorpayWebhookRoutes.post("/", async (c) => {
           order.status === "expired") &&
         razorpayPaymentId
       ) {
-        // Payment was captured on an order that was cancelled or expired while payment was in-flight.
-        // Immediately issue full refund so customer is never charged for an unfulfilled order.
-        console.warn(
-          `[Razorpay Webhook]: Payment ${razorpayPaymentId} captured on cancelled/expired order ${order.orderNumber} (${order.status}). Triggering automatic refund.`,
-        );
-        const now = new Date();
-        const refundResult = await initiateRazorpayRefund({
-          paymentId: razorpayPaymentId,
-          amountInInr: order.totalAmount,
-          reason: `Automatic refund: Payment captured on ${order.status} order`,
-          keyId: c.env.RAZORPAY_KEY_ID,
-          keySecret: c.env.RAZORPAY_KEY_SECRET,
-          isDevelopment: isDev,
-        });
-
-        await ordersCol.updateOne(
-          { id: order.id },
-          {
-            $set: {
-              "payment.status": "paid",
-              "payment.razorpayPaymentId": razorpayPaymentId,
-              "payment.paidAt": now,
-              "refund.status": refundResult.success ? "refunded" : "failed",
-              "refund.amount": order.totalAmount,
-              "refund.type": "full",
-              "refund.reason": `Payment captured on ${order.status} order`,
-              "refund.razorpayRefundId": refundResult.refundId,
-              "refund.refundedAt": refundResult.success ? now : undefined,
-              "refund.error": refundResult.error,
-              updatedAt: now,
-            },
-            $push: {
-              timeline: {
-                status: order.status,
-                timestamp: now,
-                note: `Payment captured via webhook on ${order.status} order. Auto-refund ${
-                  refundResult.success
-                    ? "issued successfully"
-                    : `failed: ${refundResult.error || "unknown error"}. Queued for retry.`
-                }.`,
+        // Double-refund guard: If the order has already been refunded or has a refund ID, skip!
+        if (order.refund?.status === "refunded" || Boolean(order.refund?.razorpayRefundId)) {
+          console.log(
+            `[Razorpay Webhook]: Payment ${razorpayPaymentId} captured on ${order.status} order ${order.orderNumber}, but refund already completed (${order.refund?.razorpayRefundId || order.refund?.status}). Skipping duplicate refund.`,
+          );
+          if (order.payment?.status !== "paid") {
+            await ordersCol.updateOne(
+              { id: order.id },
+              {
+                $set: {
+                  "payment.status": "paid",
+                  "payment.razorpayPaymentId": razorpayPaymentId,
+                  "payment.paidAt": new Date(),
+                  updatedAt: new Date(),
+                },
               },
-            } as any,
-          },
-        );
+            );
+          }
+        } else {
+          // Payment was captured on an order that was cancelled or expired while payment was in-flight.
+          // Trigger automatic refund so customer is never charged for an unfulfilled order.
+          console.warn(
+            `[Razorpay Webhook]: Payment ${razorpayPaymentId} captured on cancelled/expired order ${order.orderNumber} (${order.status}). Triggering automatic refund.`,
+          );
+          const now = new Date();
+          const refundResult = await initiateRazorpayRefund({
+            paymentId: razorpayPaymentId,
+            amountInInr: order.totalAmount,
+            reason: `Automatic refund: Payment captured on ${order.status} order`,
+            keyId: c.env.RAZORPAY_KEY_ID,
+            keySecret: c.env.RAZORPAY_KEY_SECRET,
+            isDevelopment: isDev,
+          });
 
-        await recordOrderEvent(db, {
-          type: "order_cancelled",
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          status: order.status,
-          summary: {
-            reason: `Webhook payment on ${order.status} order`,
-            refundAmount: order.totalAmount,
-            refundStatus: refundResult.success ? "refunded" : "failed",
-          },
-        });
+          await ordersCol.updateOne(
+            { id: order.id },
+            {
+              $set: {
+                "payment.status": "paid",
+                "payment.razorpayPaymentId": razorpayPaymentId,
+                "payment.paidAt": now,
+                "refund.status": refundResult.success ? "refunded" : "failed",
+                "refund.amount": order.totalAmount,
+                "refund.type": "full",
+                "refund.reason": `Payment captured on ${order.status} order`,
+                "refund.razorpayRefundId": refundResult.refundId,
+                "refund.refundedAt": refundResult.success ? now : undefined,
+                "refund.error": refundResult.error,
+                updatedAt: now,
+              },
+              $push: {
+                timeline: {
+                  status: order.status,
+                  timestamp: now,
+                  note: `Payment captured via webhook on ${order.status} order. Auto-refund ${
+                    refundResult.success
+                      ? "issued successfully"
+                      : `failed: ${refundResult.error || "unknown error"}. Queued for retry.`
+                  }.`,
+                },
+              } as any,
+            },
+          );
+
+          await recordOrderEvent(db, {
+            type: "order_cancelled",
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            status: order.status,
+            summary: {
+              reason: `Webhook payment on ${order.status} order`,
+              refundAmount: order.totalAmount,
+              refundStatus: refundResult.success ? "refunded" : "failed",
+            },
+          });
+        }
       }
     } else if (event === "refund.processed") {
       const refundEntity = payload.payload?.refund?.entity;
@@ -235,8 +263,17 @@ razorpayWebhookRoutes.post("/", async (c) => {
       }
     }
 
+    // Mark event as successfully processed in Redis AFTER successful execution
+    if (redis && dedupKey) {
+      await redis.set(dedupKey, "1", { ex: 86400 }).catch(() => {});
+    }
+
     return c.json({ success: true, message: "Webhook processed successfully" });
   } catch (error) {
+    // If processing threw an error, delete the dedup key so Razorpay retries are NOT blocked
+    if (redis && dedupKey) {
+      await redis.del(dedupKey).catch(() => {});
+    }
     console.error("Razorpay webhook handler error:", error);
     return c.json({ success: false, message: "Internal server error" }, 500);
   }

@@ -212,7 +212,7 @@ adminOrderRoutes.get("/", async (c) => {
       }
     } else {
       // Default: exclude unpaid abandoned checkouts from the main orders table
-      filter.status = { $ne: "pending_payment" };
+      filter.status = { $nin: ["pending_payment", "expired"] };
     }
 
     if (dateQuery && /^\d{4}-\d{2}-\d{2}$/.test(dateQuery)) {
@@ -587,6 +587,7 @@ adminOrderRoutes.get("/reports", async (c) => {
                   "cancelled_by_customer",
                   "cancelled_by_admin",
                   "pending_payment",
+                  "expired",
                 ],
               },
             },
@@ -613,6 +614,7 @@ adminOrderRoutes.get("/reports", async (c) => {
                   "cancelled_by_customer",
                   "cancelled_by_admin",
                   "pending_payment",
+                  "expired",
                 ],
               },
             },
@@ -631,7 +633,10 @@ adminOrderRoutes.get("/reports", async (c) => {
         ])
         .toArray(),
 
-      ordersCol.countDocuments(dateMatch),
+      ordersCol.countDocuments({
+        ...dateMatch,
+        status: { $nin: ["pending_payment", "expired"] },
+      }),
       ordersCol.countDocuments({
         ...dateMatch,
         status: { $in: ["cancelled_by_customer", "cancelled_by_admin"] },
@@ -648,6 +653,7 @@ adminOrderRoutes.get("/reports", async (c) => {
                   "cancelled_by_customer",
                   "cancelled_by_admin",
                   "pending_payment",
+                  "expired",
                 ],
               },
             },

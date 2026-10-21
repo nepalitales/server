@@ -626,7 +626,7 @@ clientOrderRoutes.get("/", async (c) => {
     const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
 
     const orders = await ordersCol
-      .find({ userId, status: { $ne: "pending_payment" } })
+      .find({ userId, status: { $nin: ["pending_payment", "expired"] } })
       .sort({ createdAt: -1 })
       .toArray();
 

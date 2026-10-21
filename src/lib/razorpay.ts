@@ -255,6 +255,23 @@ export async function initiateRazorpayRefund(
     if (!res.ok) {
       const msg = data?.error?.description || `Razorpay refund failed: ${res.status}`;
 
+      // If Razorpay reports that the payment has already been refunded, treat as idempotent success
+      if (
+        typeof msg === "string" &&
+        /already been (fully )?refunded|payment.*already.*refund|cannot be refunded.*already/i.test(msg)
+      ) {
+        console.log(
+          `[Razorpay Refund]: Payment ${paymentId} is already refunded at Razorpay. Treating as idempotent success.`,
+        );
+        return {
+          success: true,
+          refundId: data?.error?.metadata?.refund_id || `rfnd_verified_${paymentId}`,
+          amount: amountInPaise ?? 0,
+          status: "processed",
+          isSimulated: false,
+        };
+      }
+
       // If instant refund failed due to lack of merchant refund reserve balance,
       // seamlessly retry as a standard transaction reversal (which doesn't require extra balance)
       if (

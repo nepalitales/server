@@ -369,7 +369,14 @@ export async function checkOrderWindow(
       const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
       currentSlotOrdersCount = await ordersCol.countDocuments({
         createdAt: { $gte: windowStart, $lte: canCancelUntil },
-        status: { $nin: ["cancelled_by_customer", "cancelled_by_admin"] },
+        status: {
+          $nin: [
+            "cancelled_by_customer",
+            "cancelled_by_admin",
+            "pending_payment",
+            "expired",
+          ],
+        },
       });
 
       if (currentSlotOrdersCount >= maxOrders) {

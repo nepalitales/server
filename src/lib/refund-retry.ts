@@ -36,7 +36,7 @@ export async function retryFailedRefunds(
   // Scan for cancelled orders with captured payment whose refund is pending or failed
   const pendingOrders = await ordersCol
     .find({
-      status: { $in: ["cancelled_by_customer", "cancelled_by_admin"] },
+      status: { $in: ["cancelled_by_customer", "cancelled_by_admin", "expired"] },
       "payment.status": "paid",
       "payment.razorpayPaymentId": { $exists: true, $ne: "" },
       "refund.status": { $in: ["failed", "pending"] },
