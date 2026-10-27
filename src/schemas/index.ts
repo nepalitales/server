@@ -182,6 +182,38 @@ export const bulkUpdateOrderWindowSchema = z.object({
     .max(10, "Maximum 10 time windows per day"),
 });
 
+export const extendLiveOrderWindowSchema = z
+  .object({
+    extendMinutes: z
+      .number()
+      .int("Extension minutes must be an integer")
+      .min(1, "Extension minutes must be at least 1")
+      .max(720, "Extension minutes cannot exceed 12 hours")
+      .optional(),
+    newEndTime: z
+      .string()
+      .regex(timeRegex, "End time must be in HH:mm format (24-hour)")
+      .optional(),
+    additionalCap: z
+      .number()
+      .int("Additional capacity must be an integer")
+      .min(0, "Additional capacity cannot be negative")
+      .max(10000, "Additional capacity cannot exceed 10,000")
+      .optional(),
+    newMaxOrders: z
+      .number()
+      .int("Max orders must be an integer")
+      .min(1, "Max orders must be at least 1")
+      .max(20000, "Max orders cannot exceed 20,000")
+      .optional(),
+    autoExtendDispatchSlots: z.boolean().default(true),
+    targetDay: dayOfWeekSchema.optional(),
+  })
+  .refine(
+    (data) => data.extendMinutes !== undefined || data.newEndTime !== undefined || data.additionalCap !== undefined || data.newMaxOrders !== undefined,
+    { message: "At least one extension parameter (time or cap) must be provided" }
+  );
+
 // ─── Dispatch Window & Slot Schemas ──────────────────────────────
 
 export const dispatchSlotSchema = z
