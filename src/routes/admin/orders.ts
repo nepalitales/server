@@ -14,7 +14,7 @@ import {
   adminCancelOrderSchema,
   reportsQuerySchema,
 } from "../../schemas";
-import { formatZodErrors } from "../../utils";
+import { formatZodErrors, escapeRegex } from "../../utils";
 import { getRedisClient, cacheGet, cacheSet, cacheDel, CACHE_KEYS } from "../../lib/redis";
 import type { Db } from "mongodb";
 import type { OrderDoc, OrderStatus } from "../../types";
@@ -178,10 +178,11 @@ adminOrderRoutes.get("/", async (c) => {
     }
 
     if (search) {
+      const sanitized = escapeRegex(search.slice(0, 100));
       filter.$or = [
-        { orderNumber: { $regex: search, $options: "i" } },
-        { "customer.name": { $regex: search, $options: "i" } },
-        { "customer.phone": { $regex: search.replace(/\D/g, "") } },
+        { orderNumber: { $regex: sanitized, $options: "i" } },
+        { "customer.name": { $regex: sanitized, $options: "i" } },
+        { "customer.phone": { $regex: escapeRegex(search.replace(/\D/g, "")) } },
       ];
     }
 

@@ -21,3 +21,11 @@ export function slugify(text: string): string {
     .replace(/[\s_]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
+/**
+ * Escape regular expression special characters to prevent ReDoS and regex injection.
+ */
+export function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+

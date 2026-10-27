@@ -13,6 +13,7 @@ import {
   putEdgeAddonsCache,
 } from "../../lib/addons-cache";
 import { getOrderSettings, publicOrderSettings } from "../../lib/order-settings";
+import { escapeRegex } from "../../utils";
 import type {
   ProductDoc,
   CategoryDoc,
@@ -66,9 +67,10 @@ clientRoutes.get("/products", async (c) => {
       filter.type = foodType;
     }
     if (search) {
+      const sanitized = escapeRegex(search.slice(0, 100));
       filter.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
+        { name: { $regex: sanitized, $options: "i" } },
+        { description: { $regex: sanitized, $options: "i" } },
       ];
     }
 
