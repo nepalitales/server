@@ -24,6 +24,9 @@ import { addonRoutes } from "./routes/addons";
 import { adminOrderSettingsRoutes } from "./routes/admin/order-settings";
 import { getCachedConfigVersion } from "./lib/config-version";
 import { edgeCacheMiddleware } from "./middleware/edge-cache";
+import { streamSSE } from "hono/streaming";
+import { liveWindowBroadcastHub } from "./lib/live-order-window";
+import { getRedisClient, cacheGet, CACHE_KEYS } from "./lib/redis";
 
 const app = new Hono<AppBindings>();
 
@@ -113,6 +116,68 @@ app.use("/api/client/config-version", async (c, next) => {
     return c.json({ success: true, version: cached });
   }
   await next();
+});
+
+// Real-Time Live Order Window SSE Stream for Active Clients
+// Completely bypasses MongoDB to prevent connection exhaustion.
+// Zero DB connections held for the duration of the stream.
+app.get("/api/client/live-window/stream", async (c) => {
+  return streamSSE(c, async (stream) => {
+    // 1. Send initial snapshot from Redis cache if available
+    try {
+      const redis = getRedisClient(c.env);
+      const cached = redis ? await cacheGet<Record<string, unknown>>(redis, CACHE_KEYS.ORDER_WINDOW_STATUS) : null;
+      await stream.writeSSE({
+        event: "INIT",
+        data: JSON.stringify(
+          cached || {
+            isOpen: true,
+            message: "Connected to live order window real-time channel",
+            timestamp: new Date().toISOString(),
+          },
+        ),
+      });
+    } catch {
+      // Ignore cache lookup error on init
+    }
+
+    // 2. Subscribe to in-memory broadcast hub (O(1) memory, 0 DB queries)
+    const unsubscribe = liveWindowBroadcastHub.subscribe(async (payload) => {
+      try {
+        await stream.writeSSE({
+          event: "LIVE_WINDOW_EXTENDED",
+          data: JSON.stringify(payload),
+        });
+      } catch {
+        // Client stream disconnected
+      }
+    });
+
+    let isStreamActive = true;
+    const heartbeatInterval = setInterval(async () => {
+      if (!isStreamActive) return;
+      try {
+        await stream.writeSSE({
+          event: "PING",
+          data: JSON.stringify({ ts: Date.now() }),
+        });
+      } catch {
+        isStreamActive = false;
+        clearInterval(heartbeatInterval);
+        unsubscribe();
+      }
+    }, 25_000);
+
+    stream.onAbort(() => {
+      isStreamActive = false;
+      clearInterval(heartbeatInterval);
+      unsubscribe();
+    });
+
+    while (isStreamActive) {
+      await stream.sleep(20_000);
+    }
+  });
 });
 
 // Database connection -- opens per-request, closes in finally block
