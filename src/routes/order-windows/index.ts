@@ -2,9 +2,18 @@ import { Hono } from "hono";
 import type { AppBindings } from "../../config/app";
 import { COLLECTIONS } from "../../lib/db";
 import { bumpConfigVersion } from "../../lib/config-version";
-import { dayOfWeekSchema, updateOrderWindowSchema, bulkUpdateOrderWindowSchema } from "../../schemas";
+import {
+  dayOfWeekSchema,
+  updateOrderWindowSchema,
+  bulkUpdateOrderWindowSchema,
+  extendLiveOrderWindowSchema,
+} from "../../schemas";
 import { formatZodErrors } from "../../utils";
 import { authMiddleware } from "../../middleware/auth";
+import {
+  getLiveOrderWindowOverview,
+  extendLiveOrderWindow,
+} from "../../lib/live-order-window";
 import type { OrderWindowDoc, DayOfWeek } from "../../types";
 
 const orderWindowRoutes = new Hono<AppBindings>();
@@ -190,6 +199,63 @@ orderWindowRoutes.put("/:day", async (c) => {
   } catch (error) {
     console.error("Update order window error:", error);
     return c.json({ success: false, message: "Internal server error" }, 500);
+  }
+});
+
+/**
+ * GET /order-windows/live
+ *
+ * Real-time overview of the currently open order window, including active capacity,
+ * orders placed in the live window, remaining minutes, and dispatch slot overview.
+ * Uses Single-Flight Promise Coalescing to guarantee 0 redundant DB load.
+ */
+orderWindowRoutes.get("/live", async (c) => {
+  try {
+    const db = c.get("db");
+    const overview = await getLiveOrderWindowOverview(db, c.env);
+    return c.json({ success: true, ...overview });
+  } catch (error) {
+    console.error("Get live order window overview error:", error);
+    return c.json({ success: false, message: "Internal server error" }, 500);
+  }
+});
+
+/**
+ * POST /order-windows/extend-live
+ *
+ * Instantly extends the live ordering window end-time and order capacity cap.
+ * Automatically tiles and/or scales dispatch slots proportionally, updates MongoDB
+ * with a single atomic write, syncs Redis cache, and broadcasts to all active SSE clients.
+ */
+orderWindowRoutes.post("/extend-live", async (c) => {
+  try {
+    const body = await c.req.json();
+    const parsed = extendLiveOrderWindowSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: "Invalid live window extension data",
+          errors: formatZodErrors(parsed.error),
+        },
+        400,
+      );
+    }
+
+    const db = c.get("db");
+    const result = await extendLiveOrderWindow(db, parsed.data, c.env);
+
+    return c.json(result);
+  } catch (error: any) {
+    console.error("Extend live order window error:", error);
+    return c.json(
+      {
+        success: false,
+        message: error?.message || "Failed to extend live order window",
+      },
+      500,
+    );
   }
 });
 
