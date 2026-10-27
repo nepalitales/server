@@ -44,9 +44,12 @@ export async function authMiddleware(
     ? authHeader.slice(7).trim()
     : null;
 
-  const queryToken = c.req.query("token");
+  // Prevent token leakage via access logs and browser histories:
+  // Disallow ?token= on standard REST routes; only permit on explicit streaming/event endpoints
+  const isStreamRoute = c.req.path.endsWith("/events") || c.req.path.endsWith("/stream");
+  const queryToken = isStreamRoute ? c.req.query("token") : null;
   const cookieToken = getCookie(c, SESSION_COOKIE);
-  const token = bearerToken || queryToken || cookieToken;
+  const token = bearerToken || cookieToken || queryToken;
 
   if (!token) {
     return c.json({ success: false, message: "Authentication required" }, 401);

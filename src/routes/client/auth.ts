@@ -133,9 +133,9 @@ async function handleSendOtp(c: Context<AppBindings>) {
       }
     }
 
-    // Generate 6-digit OTP and hash it
+    // Generate 6-digit OTP and hash it with per-request salt and email binding
     const otp = generateNumericOtp(6);
-    const otpHash = await hashOtp(otp);
+    const otpHash = await hashOtp(otp, identifier);
     const expiresAt = new Date(now + OTP_EXPIRY_MS);
     const updatedHistory = [...recentRequests, new Date()];
 
@@ -274,8 +274,8 @@ clientAuthRoutes.post("/verify-otp", async (c) => {
       );
     }
 
-    // Verify OTP
-    const isValid = await verifyOtp(otp, otpDoc.otpHash);
+    // Verify OTP with timing-safe comparison
+    const isValid = await verifyOtp(otp, otpDoc.otpHash, identifier);
     if (!isValid) {
       const remaining = 4 - otpDoc.attempts;
       await otps.updateOne(

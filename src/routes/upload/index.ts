@@ -90,8 +90,33 @@ uploadRoutes.post("/", async (c) => {
       );
     }
 
+    const imageStr = jsonBody.image.trim();
+    const MAX_BASE64_LENGTH = 14 * 1024 * 1024; // ~10MB decoded binary
+    const DATA_URI_IMAGE_REGEX = /^data:image\/(png|jpeg|jpg|webp);base64,/i;
+
+    if (!DATA_URI_IMAGE_REGEX.test(imageStr)) {
+      return c.json(
+        {
+          success: false,
+          message:
+            "Invalid image format. Base64 uploads must be a data URI formatted as PNG, JPEG, or WebP (e.g., data:image/png;base64,...)",
+        },
+        400,
+      );
+    }
+
+    if (imageStr.length > MAX_BASE64_LENGTH) {
+      return c.json(
+        {
+          success: false,
+          message: "Base64 image exceeds 10MB maximum size limit",
+        },
+        400,
+      );
+    }
+
     const jsonFolder = jsonBody.folder === "addons" ? "addons" : "products";
-    const result = await uploadToCloudinary(jsonBody.image, jsonFolder, config);
+    const result = await uploadToCloudinary(imageStr, jsonFolder, config);
 
     return c.json({
       success: true,

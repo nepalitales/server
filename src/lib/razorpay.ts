@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 /**
  * Razorpay Payment Gateway integration module.
  *
@@ -5,6 +7,24 @@
  * and refunds. In development mode or when keys are omitted, provides
  * transparent simulation for seamless end-to-end testing.
  */
+
+/**
+ * Constant-time hex string comparison to prevent timing side-channel attacks.
+ */
+function safeCompareHex(a: string, b: string): boolean {
+  try {
+    const cleanA = a.trim().toLowerCase();
+    const cleanB = b.trim().toLowerCase();
+    const bufA = Buffer.from(cleanA, "hex");
+    const bufB = Buffer.from(cleanB, "hex");
+    if (bufA.length === 0 || bufB.length === 0 || bufA.length !== bufB.length) {
+      return false;
+    }
+    return timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
 
 export interface CreateOrderParams {
   amountInInr: number;
@@ -196,7 +216,7 @@ export async function verifyRazorpaySignature(
   const signatureBuffer = await crypto.subtle.sign("HMAC", cryptoKey, msgData);
   const expectedSignature = Buffer.from(signatureBuffer).toString("hex");
 
-  return expectedSignature.toLowerCase() === razorpaySignature.toLowerCase();
+  return safeCompareHex(expectedSignature, razorpaySignature);
 }
 
 /**
@@ -350,6 +370,6 @@ export async function verifyRazorpayWebhookSignature(
   const signatureBuffer = await crypto.subtle.sign("HMAC", cryptoKey, msgData);
   const expectedSignature = Buffer.from(signatureBuffer).toString("hex");
 
-  return expectedSignature.toLowerCase() === signature.toLowerCase();
+  return safeCompareHex(expectedSignature, signature);
 }
 
