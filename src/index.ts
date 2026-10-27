@@ -58,29 +58,29 @@ app.use("*", timing());
 // Request logging
 app.use("*", logger());
 
-// Strict allowlist of origins permitted to make cross-origin requests
+// Strict allowlist of production origins permitted to make cross-origin requests
 const ALLOWED_ORIGINS = new Set([
   "https://nepalitales.com",
   "https://www.nepalitales.com",
   "https://admin.nepalitales.com",
-  "http://localhost:3000",
-  "http://localhost:3001",
 ]);
 
-// CORS -- allow only explicit production domains and local dev ports
+// CORS -- allow only explicit production domains and local dev ports in non-production
 app.use(
   "*",
   cors({
-    origin: (origin, _c) => {
+    origin: (origin, c) => {
       // No origin header = direct API call (curl, server-to-server, mobile apps)
       // Return null to block browser requests without an Origin header
       if (!origin) return "https://nepalitales.com";
 
       if (ALLOWED_ORIGINS.has(origin)) return origin;
 
+      const isNonProduction = (c.env as any)?.NODE_ENV !== "production";
       if (
-        origin.startsWith("http://localhost:") ||
-        origin.startsWith("http://127.0.0.1:")
+        isNonProduction &&
+        (origin.startsWith("http://localhost:") ||
+          origin.startsWith("http://127.0.0.1:"))
       ) {
         return origin;
       }
