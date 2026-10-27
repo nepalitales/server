@@ -201,43 +201,48 @@ async function seed() {
 
     console.log("Seeding admin accounts...");
 
-    const initialAdmins = [
-      {
-        name: "Ankit Bhavarthe",
-        email: "ankitbhavarthe123@gmail.com",
-        phone: "9309348875",
-        password: "2003@A",
-      },
-      {
-        name: "Admin 1",
-        email: "nepalitalesadmin1@gmail.com",
-        phone: "7585080407",
-        password: "JuicyMomo@2026",
-      },
-      {
-        name: "Admin 2",
-        email: "nepalitalesadmin2@gmail.com",
-        phone: "7602277431",
-        password: "JuicyMomo@2026",
-      },
-    ];
+    const seedPassword = process.env.SEED_ADMIN_PASSWORD;
 
-    for (const adm of initialAdmins) {
-      const existing = await db.collection("admins").findOne({ email: adm.email });
-      if (existing) {
-        console.log(`  [SKIP] Admin ${adm.email} already exists, skipping`);
-      } else {
-        const passwordHash = await hashPassword(adm.password);
-        await db.collection("admins").insertOne({
-          id: generateId("admin"),
-          name: adm.name,
-          email: adm.email,
-          phone: adm.phone,
-          passwordHash,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-        console.log(`  [OK] Admin created: ${adm.email}`);
+    if (!seedPassword || seedPassword.length < 12) {
+      console.log(
+        "  [SKIP] SEED_ADMIN_PASSWORD environment variable not set or under 12 characters. Skipping admin seeding.",
+      );
+    } else {
+      const initialAdmins = [
+        {
+          name: "Ankit Bhavarthe",
+          email: "ankitbhavarthe123@gmail.com",
+          phone: "9309348875",
+        },
+        {
+          name: "Admin 1",
+          email: "nepalitalesadmin1@gmail.com",
+          phone: "7585080407",
+        },
+        {
+          name: "Admin 2",
+          email: "nepalitalesadmin2@gmail.com",
+          phone: "7602277431",
+        },
+      ];
+
+      for (const adm of initialAdmins) {
+        const existing = await db.collection("admins").findOne({ email: adm.email });
+        if (existing) {
+          console.log(`  [SKIP] Admin ${adm.email} already exists, skipping`);
+        } else {
+          const passwordHash = await hashPassword(seedPassword);
+          await db.collection("admins").insertOne({
+            id: generateId("admin"),
+            name: adm.name,
+            email: adm.email,
+            phone: adm.phone,
+            passwordHash,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+          console.log(`  [OK] Admin created: ${adm.email}`);
+        }
       }
     }
     console.log("");

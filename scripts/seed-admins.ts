@@ -6,19 +6,27 @@ loadEnv();
 
 const MONGODB_URI = process.env.MONGODB_URI || "";
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "nepali-tales";
+const SEED_ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD;
+
+if (!SEED_ADMIN_PASSWORD || SEED_ADMIN_PASSWORD.length < 12) {
+  console.error(
+    "\n[SECURITY ERROR] SEED_ADMIN_PASSWORD environment variable is missing or too short.\n" +
+      "To seed or update admin accounts, please provide a secure password (minimum 12 characters):\n\n" +
+      "  SEED_ADMIN_PASSWORD='your-secure-password' npm run seed:admins\n"
+  );
+  process.exit(1);
+}
 
 const ADMINS_TO_SEED = [
   {
-    name: "Admin 1",
-    email: "nepalitalesadmin1@gmail.com",
-    password: "JuicyMomo@2026",
-    phone: "7585080407",
+    name: process.env.ADMIN_1_NAME || "Admin 1",
+    email: process.env.ADMIN_1_EMAIL || "nepalitalesadmin1@gmail.com",
+    phone: process.env.ADMIN_1_PHONE || "7585080407",
   },
   {
-    name: "Admin 2",
-    email: "nepalitalesadmin2@gmail.com",
-    password: "JuicyMomo@2026",
-    phone: "7602277431",
+    name: process.env.ADMIN_2_NAME || "Admin 2",
+    email: process.env.ADMIN_2_EMAIL || "nepalitalesadmin2@gmail.com",
+    phone: process.env.ADMIN_2_PHONE || "7602277431",
   },
 ];
 
@@ -36,7 +44,7 @@ async function seedAdmins() {
         $or: [{ email: normalizedEmail }, { phone: admin.phone }],
       });
 
-      const passwordHash = await hashPassword(admin.password);
+      const passwordHash = await hashPassword(SEED_ADMIN_PASSWORD);
       const now = new Date();
 
       if (existing) {
