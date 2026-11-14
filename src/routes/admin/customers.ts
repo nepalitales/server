@@ -69,6 +69,7 @@ adminCustomerRoutes.get("/", async (c) => {
           phone: { $ifNull: ["$phone", ""] },
           email: { $ifNull: ["$email", ""] },
           orderCount: { $size: "$userOrders" },
+          totalOrders: { $size: "$userOrders" },
           totalSpent: { $sum: "$userOrders.totalAmount" },
           lastOrderAt: { $max: "$userOrders.createdAt" },
         },
