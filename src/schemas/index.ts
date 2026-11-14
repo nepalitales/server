@@ -600,6 +600,21 @@ export const reportsQuerySchema = z.object({
     .optional(),
 });
 
+export const adminCustomersQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional().default(1),
+  limit: z.coerce.number().int().positive().max(100).optional().default(20),
+  search: z.string().trim().optional(),
+  sortBy: z
+    .enum(["orders", "spent", "recent", "joined", "name"])
+    .optional()
+    .default("orders"),
+  sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
+  filter: z
+    .enum(["all", "ordered", "repeat", "frequent", "no_orders"])
+    .optional()
+    .default("all"),
+});
+
 // ─── FAQ Schemas ─────────────────────────────────────────────────
 
 export const createAddonSchema = z.object({
