@@ -255,11 +255,8 @@ export async function sendOrderConfirmationEmail(
       <td style="padding: 8px 0 8px 16px; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #4b5563;">
         + ${addon.name}
       </td>
-      <td style="padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #4b5563; text-align: center;">
+      <td style="padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #4b5563; text-align: right;">
         × ${addon.quantity}
-      </td>
-      <td style="padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px; font-weight: 600; color: #111827; text-align: right;">
-        ₹${addon.subtotal}
       </td>
     </tr>`,
         )
@@ -270,11 +267,8 @@ export async function sendOrderConfirmationEmail(
       <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6; font-size: 14px; color: #1f2937;">
         <strong>${item.productName}</strong>
       </td>
-      <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6; font-size: 14px; color: #4b5563; text-align: center;">
-        × ${item.quantity}
-      </td>
       <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6; font-size: 14px; font-weight: 600; color: #111827; text-align: right;">
-        ₹${item.subtotal}
+        × ${item.quantity}
       </td>
     </tr>${addonRows}`;
     })
@@ -288,10 +282,10 @@ export async function sendOrderConfirmationEmail(
     order.deliveryAddress?.street ||
     "Metropolis Rivera, Kasarvadavali, Thane";
 
-  const subject = `Order Confirmed: #${order.orderNumber} (₹${order.totalAmount}) - Nepali Tales`;
+  const subject = `Order Confirmed: #${order.orderNumber} - Nepali Tales`;
   const text =
-    `Namaste ${order.customer.name}! Your ${fulfillmentLabel.toLowerCase()} order #${order.orderNumber} for ₹${order.totalAmount} is confirmed.\n` +
-    `Items: ${order.items.map((i) => `${i.productName} x${i.quantity} (₹${i.subtotal})`).join(", ")}\n` +
+    `Namaste ${order.customer.name}! Your ${fulfillmentLabel.toLowerCase()} order #${order.orderNumber} is confirmed.\n` +
+    `Items: ${order.items.map((i) => `${i.productName} x${i.quantity}`).join(", ")}\n` +
     `${fulfillmentLabel}: ${fulfillmentAddress}\n` +
     `Cancellation Deadline: You can cancel before ${formattedCancelTime} if needed.\n` +
     `Thank you for ordering authentic Nepali food!`;
@@ -331,9 +325,8 @@ export async function sendOrderConfirmationEmail(
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
                 <thead>
                   <tr style="border-bottom: 2px solid #e5e7eb;">
-                    <th align="left" style="padding-bottom: 8px; font-size: 12px; color: #6b7280; text-transform: uppercase;">Item</th>
-                    <th align="center" style="padding-bottom: 8px; font-size: 12px; color: #6b7280; text-transform: uppercase;">Qty</th>
-                    <th align="right" style="padding-bottom: 8px; font-size: 12px; color: #6b7280; text-transform: uppercase;">Amount</th>
+                    <th align="left" style="padding-bottom: 8px; font-size: 12px; color: #6b7280; text-transform: uppercase;">Product Name</th>
+                    <th align="right" style="padding-bottom: 8px; font-size: 12px; color: #6b7280; text-transform: uppercase;">Qty</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -341,22 +334,15 @@ export async function sendOrderConfirmationEmail(
                 </tbody>
               </table>
 
-              <!-- Bill Totals -->
+              <!-- Order Mode / Payment Status -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px; background-color: #f9fafb; padding: 14px 16px; border-radius: 8px;">
                 <tr>
-                  <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Item Total</td>
-                  <td align="right" style="padding: 4px 0; font-size: 13px; color: #1f2937;">₹${order.itemTotal}</td>
+                  <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Payment Status</td>
+                  <td align="right" style="padding: 4px 0; font-size: 13px; font-weight: 700; color: #15803d;">Paid via Razorpay</td>
                 </tr>
-                ${isPickup ? `<tr>
-                  <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Fulfillment</td>
-                  <td align="right" style="padding: 4px 0; font-size: 13px; color: #15803d;">Self-Pickup (Free)</td>
-                </tr>` : `<tr>
-                  <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Delivery Fee</td>
-                  <td align="right" style="padding: 4px 0; font-size: 13px; color: #1f2937;">${order.deliveryFee > 0 ? `₹${order.deliveryFee}` : "As per Borzo/Porter service"}</td>
-                </tr>`}
                 <tr>
-                  <td style="padding: 8px 0 0 0; font-size: 15px; font-weight: 700; color: #111827; border-top: 1px solid #e5e7eb;">Total Paid</td>
-                  <td align="right" style="padding: 8px 0 0 0; font-size: 17px; font-weight: 800; color: #b91c1c; border-top: 1px solid #e5e7eb;">₹${order.totalAmount}</td>
+                  <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Fulfillment</td>
+                  <td align="right" style="padding: 4px 0; font-size: 13px; font-weight: 700; color: #111827;">${isPickup ? "Self-Pickup" : "Doorstep Delivery"}</td>
                 </tr>
               </table>
 
@@ -375,7 +361,7 @@ export async function sendOrderConfirmationEmail(
           <tr>
             <td style="padding: 24px 32px; background-color: #fafafa; border-top: 1px solid #f3f4f6; text-align: center; font-size: 12px; color: #9ca3af; line-height: 18px;">
               Nepali Tales Cloud Kitchen • Kasarvadavali, Thane<br />
-              Need help? Reach out on +91 7678097659
+              Authentic Himalayan Delicacies
             </td>
           </tr>
 
@@ -649,7 +635,7 @@ export async function sendOrderStatusEmail(
 
           <tr>
             <td style="padding: 20px 28px; background-color: #fafafa; border-top: 1px solid #f3f4f6; text-align: center; font-size: 12px; color: #9ca3af;">
-              Nepali Tales Cloud Kitchen • Kasarvadavali, Thane • +91 7678097659
+              Nepali Tales Cloud Kitchen • Kasarvadavali, Thane
             </td>
           </tr>
 

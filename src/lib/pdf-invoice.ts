@@ -69,7 +69,6 @@ export async function generateOrderInvoicePdf(order: OrderDoc): Promise<Uint8Arr
   for (const l of wrapText(kitchenAddress, COLS)) {
     lines.push({ text: l, align: "center" });
   }
-  lines.push({ text: "Ph: 917678097659", align: "center" });
   lines.push(divider);
   lines.push({ text: "RECEIPT", bold: true, align: "center" });
   lines.push(divider);
@@ -116,30 +115,27 @@ export async function generateOrderInvoicePdf(order: OrderDoc): Promise<Uint8Arr
 
   lines.push(divider);
 
-  // 3. Item Breakdown Table
+  // 3. Item Breakdown Table (Product Name & Quantity only)
   lines.push({
-    left: "Item",
-    right: "Price Qty Total",
+    left: "Product Name",
+    right: "Qty",
     bold: true,
   });
 
   for (const item of order.items) {
-    const priceStr = String(item.price).padStart(5);
-    const qtyStr = String(item.quantity).padStart(3);
-    const totalStr = String(item.subtotal).padStart(6);
-    const colRight = `${priceStr} ${qtyStr} ${totalStr}`;
+    const qtyStr = String(item.quantity);
+    const maxItemNameLen = COLS - qtyStr.length - 2;
 
-    const maxItemNameLen = COLS - colRight.length - 1;
     if (item.productName.length <= maxItemNameLen) {
       lines.push({
         left: item.productName,
-        right: colRight,
+        right: qtyStr,
       });
     } else {
       const itemWrapped = wrapText(item.productName, maxItemNameLen);
       lines.push({
         left: itemWrapped[0] ?? item.productName,
-        right: colRight,
+        right: qtyStr,
       });
       for (let i = 1; i < itemWrapped.length; i++) {
         lines.push({ text: `  ${itemWrapped[i]}` });
@@ -148,13 +144,13 @@ export async function generateOrderInvoicePdf(order: OrderDoc): Promise<Uint8Arr
 
     if (item.addons && item.addons.length > 0) {
       for (const add of item.addons) {
-        const addInfo = `+ ${add.name} (${add.quantity}x @ ${add.price})`;
-        const addTotal = String(add.subtotal);
-        if (addInfo.length + addTotal.length + 1 <= COLS) {
-          lines.push({ left: `  ${addInfo}`, right: addTotal });
+        const addInfo = `+ ${add.name}`;
+        const addQty = String(add.quantity);
+        if (addInfo.length + addQty.length + 2 <= COLS) {
+          lines.push({ left: `  ${addInfo}`, right: addQty });
         } else {
           lines.push({ text: `  ${addInfo}` });
-          lines.push({ right: addTotal });
+          lines.push({ right: addQty });
         }
       }
     }
@@ -162,34 +158,11 @@ export async function generateOrderInvoicePdf(order: OrderDoc): Promise<Uint8Arr
 
   lines.push(divider);
 
-  // 4. Totals
-  lines.push({
-    left: "Sub-Total:",
-    right: `INR ${order.itemTotal}`,
-  });
-  if (isPickup) {
-    lines.push({
-      left: "Fulfillment:",
-      right: "Self-Pickup (Free)",
-    });
-  } else {
-    lines.push({
-      left: "Delivery Fee:",
-      right: order.deliveryFee > 0 ? `INR ${order.deliveryFee}` : "As per Borzo/Porter",
-    });
-  }
-
-  if (order.discount > 0) {
-    lines.push({
-      left: "Discount:",
-      right: `-INR ${order.discount}`,
-    });
-  }
-
+  // 4. Fulfillment & Payment Mode
   const paymentMode = order.payment?.provider ? order.payment.provider.toUpperCase() : "ONLINE";
   lines.push({
-    left: `Mode: ${paymentMode === "RAZORPAY" ? "Online" : paymentMode}`,
-    right: `Total: INR ${order.totalAmount}`,
+    left: `Mode: ${paymentMode === "RAZORPAY" ? "Online (Pre-Paid)" : paymentMode}`,
+    right: isPickup ? "Self-Pickup" : "Delivery",
     bold: true,
   });
 
