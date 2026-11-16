@@ -23,6 +23,7 @@ import { adminDispatchWindowRoutes } from "./routes/admin/dispatch-windows";
 import { addonRoutes } from "./routes/addons";
 import { adminOrderSettingsRoutes } from "./routes/admin/order-settings";
 import { adminCustomerRoutes } from "./routes/admin/customers";
+import { adminInventoryPrepRoutes } from "./routes/admin/inventory-prep";
 import { getCachedConfigVersion } from "./lib/config-version";
 import { edgeCacheMiddleware } from "./middleware/edge-cache";
 import { streamSSE } from "hono/streaming";
@@ -211,6 +212,7 @@ app.route("/api/admin/dispatch-windows", adminDispatchWindowRoutes);
 app.route("/api/admin/addons", addonRoutes);
 app.route("/api/admin/order-settings", adminOrderSettingsRoutes);
 app.route("/api/admin/customers", adminCustomerRoutes);
+app.route("/api/admin/inventory-prep", adminInventoryPrepRoutes);
 
 // --- Client Routes (public, read-only) ---
 app.route("/api/client", clientRoutes);

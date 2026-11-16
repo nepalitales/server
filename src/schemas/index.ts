@@ -606,6 +606,13 @@ export const adminCustomersQuerySchema = z.object({
   search: z.string().trim().optional(),
 });
 
+export const inventoryPrepQuerySchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
+    .optional(),
+});
+
 // ─── FAQ Schemas ─────────────────────────────────────────────────
 
 export const createAddonSchema = z.object({
