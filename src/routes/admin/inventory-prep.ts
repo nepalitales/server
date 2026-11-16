@@ -5,7 +5,7 @@ import { authMiddleware } from "../../middleware/auth";
 import { inventoryPrepQuerySchema } from "../../schemas";
 import { formatZodErrors } from "../../utils";
 import { getIstDateTime } from "../../lib/order-window";
-import type { OrderDoc, ProductDoc } from "../../types";
+import type { OrderDoc, ProductDoc, AddonDoc } from "../../types";
 
 export const adminInventoryPrepRoutes = new Hono<AppBindings>();
 
@@ -63,9 +63,10 @@ adminInventoryPrepRoutes.get("/", async (c) => {
     const db = c.get("db");
     const ordersCol = db.collection<OrderDoc>(COLLECTIONS.ORDERS);
     const productsCol = db.collection<ProductDoc>(COLLECTIONS.PRODUCTS);
+    const addonsCol = db.collection<AddonDoc>(COLLECTIONS.ADDONS);
 
-    // Fetch orders and products in parallel
-    const [rawOrders, allProducts] = await Promise.all([
+    // Fetch orders, products, and addons in parallel
+    const [rawOrders, allProducts, allAddons] = await Promise.all([
       ordersCol
         .find({
           dispatchDate: targetDate,
@@ -74,6 +75,7 @@ adminInventoryPrepRoutes.get("/", async (c) => {
         .sort({ "dispatchSlot.start": 1, createdAt: 1 })
         .toArray(),
       productsCol.find({}).toArray(),
+      addonsCol.find({}).toArray(),
     ]);
 
     // Create lookup map for products
@@ -81,6 +83,13 @@ adminInventoryPrepRoutes.get("/", async (c) => {
     for (const p of allProducts) {
       productMap.set(p.id, p);
       productMap.set(p.name.toLowerCase().trim(), p);
+    }
+
+    // Create lookup set for add-ons (chutneys, extra dips, chilli oil, etc.)
+    const addonLookupSet = new Set<string>();
+    for (const a of allAddons) {
+      addonLookupSet.add(a.id);
+      addonLookupSet.add(a.name.toLowerCase().trim());
     }
 
     // Separate confirmed vs cancelled orders
@@ -197,67 +206,98 @@ adminInventoryPrepRoutes.get("/", async (c) => {
       // Items aggregation
       for (const item of order.items || []) {
         const qty = item.quantity || 1;
-        totalPortions += qty;
 
-        const product =
-          productMap.get(item.productId) ||
-          productMap.get(item.productName.toLowerCase().trim());
+        // Check if item is an add-on / condiment (chutney, dip, chilli oil, etc.)
+        const isAddonItem =
+          item.kind === "addon" ||
+          Boolean(item.addonId) ||
+          item.productId?.startsWith("addon_") ||
+          addonLookupSet.has(item.productId) ||
+          addonLookupSet.has(item.productName.toLowerCase().trim());
 
-        const foodType: "veg" | "non-veg" = product?.type === "non-veg" ? "non-veg" : "veg";
-        if (foodType === "veg") {
-          vegPortions += qty;
+        if (isAddonItem) {
+          totalAddons += qty;
+          const aKey = item.addonId || item.productId || item.productName;
+          if (!addonMap.has(aKey)) {
+            addonMap.set(aKey, {
+              addonId: item.addonId || item.productId,
+              name: item.productName,
+              totalQuantity: 0,
+              orderCount: 0,
+            });
+          }
+          const aData = addonMap.get(aKey)!;
+          aData.totalQuantity += qty;
+          aData.orderCount += 1;
         } else {
-          nonVegPortions += qty;
-        }
+          // Food Dish (Momo, Jhol Momo, Shaphaley)
+          totalPortions += qty;
 
-        // Pieces per portion check (e.g. "8 pcs", "6 pcs")
-        let piecesPerPortion: number | undefined;
-        if (product?.quantity) {
-          const match = product.quantity.match(/(\d+)\s*pcs/i);
-          if (match && match[1]) piecesPerPortion = parseInt(match[1], 10);
-        }
+          const product =
+            productMap.get(item.productId) ||
+            productMap.get(item.productName.toLowerCase().trim());
 
-        const dishKey = item.productId || item.productName;
-        if (!dishMap.has(dishKey)) {
-          dishMap.set(dishKey, {
-            productId: item.productId,
-            productName: item.productName,
-            categorySlug: product?.categorySlug,
-            type: foodType,
-            unitQuantity: product?.quantity,
-            piecesPerPortion,
-            totalPortions: 0,
-            orderCount: 0,
-            slots: new Map(),
-            revenue: 0,
+          const foodType: "veg" | "non-veg" =
+            product?.type === "non-veg" ||
+            item.productName.toLowerCase().includes("chicken")
+              ? "non-veg"
+              : "veg";
+
+          if (foodType === "veg") {
+            vegPortions += qty;
+          } else {
+            nonVegPortions += qty;
+          }
+
+          // Pieces per portion check (e.g. "8 pcs", "6 pcs")
+          let piecesPerPortion: number | undefined;
+          if (product?.quantity) {
+            const match = product.quantity.match(/(\d+)\s*pcs/i);
+            if (match && match[1]) piecesPerPortion = parseInt(match[1], 10);
+          }
+
+          const dishKey = item.productId || item.productName;
+          if (!dishMap.has(dishKey)) {
+            dishMap.set(dishKey, {
+              productId: item.productId,
+              productName: item.productName,
+              categorySlug: product?.categorySlug,
+              type: foodType,
+              unitQuantity: product?.quantity,
+              piecesPerPortion,
+              totalPortions: 0,
+              orderCount: 0,
+              slots: new Map(),
+              revenue: 0,
+            });
+          }
+
+          const dishData = dishMap.get(dishKey)!;
+          dishData.totalPortions += qty;
+          dishData.orderCount += 1;
+          dishData.revenue += item.subtotal || 0;
+
+          // Slot tracking inside dish
+          const currentSlotQty = dishData.slots.get(slotId)?.quantity || 0;
+          dishData.slots.set(slotId, {
+            slotLabel,
+            quantity: currentSlotQty + qty,
           });
+
+          // Dish tracking inside slot
+          const currentSlotDish = slotData.dishes.get(dishKey);
+          if (currentSlotDish) {
+            currentSlotDish.quantity += qty;
+          } else {
+            slotData.dishes.set(dishKey, {
+              productName: item.productName,
+              type: foodType,
+              quantity: qty,
+            });
+          }
         }
 
-        const dishData = dishMap.get(dishKey)!;
-        dishData.totalPortions += qty;
-        dishData.orderCount += 1;
-        dishData.revenue += item.subtotal || 0;
-
-        // Slot tracking inside dish
-        const currentSlotQty = dishData.slots.get(slotId)?.quantity || 0;
-        dishData.slots.set(slotId, {
-          slotLabel,
-          quantity: currentSlotQty + qty,
-        });
-
-        // Dish tracking inside slot
-        const currentSlotDish = slotData.dishes.get(dishKey);
-        if (currentSlotDish) {
-          currentSlotDish.quantity += qty;
-        } else {
-          slotData.dishes.set(dishKey, {
-            productName: item.productName,
-            type: foodType,
-            quantity: qty,
-          });
-        }
-
-        // Addons aggregation
+        // Addons aggregation from nested item.addons (if any)
         if (item.addons && item.addons.length > 0) {
           for (const addon of item.addons) {
             const aQty = (addon.quantity || 1) * qty;
