@@ -214,7 +214,7 @@ adminInventoryPrepRoutes.get("/", async (c) => {
         let piecesPerPortion: number | undefined;
         if (product?.quantity) {
           const match = product.quantity.match(/(\d+)\s*pcs/i);
-          if (match) piecesPerPortion = parseInt(match[1], 10);
+          if (match && match[1]) piecesPerPortion = parseInt(match[1], 10);
         }
 
         const dishKey = item.productId || item.productName;

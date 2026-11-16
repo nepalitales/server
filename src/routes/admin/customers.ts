@@ -95,19 +95,89 @@ adminCustomerRoutes.get("/", async (c) => {
       $sort: { orderCount: -1, lastOrderAt: -1 },
     });
 
-    // Pagination facet
+    // Pagination & Stats facet
     pipeline.push({
       $facet: {
         metadata: [{ $count: "total" }],
         data: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+        stats: [
+          {
+            $group: {
+              _id: null,
+              totalCustomers: { $sum: 1 },
+              totalOrders: { $sum: "$orderCount" },
+              totalSpent: { $sum: "$totalSpent" },
+              oneTimeCustomers: {
+                $sum: { $cond: [{ $eq: ["$orderCount", 1] }, 1, 0] },
+              },
+              repeatCustomers: {
+                $sum: { $cond: [{ $gt: ["$orderCount", 1] }, 1, 0] },
+              },
+              repeatSpent: {
+                $sum: { $cond: [{ $gt: ["$orderCount", 1] }, "$totalSpent", 0] },
+              },
+              tier1: { $sum: { $cond: [{ $eq: ["$orderCount", 1] }, 1, 0] } },
+              tier2: { $sum: { $cond: [{ $eq: ["$orderCount", 2] }, 1, 0] } },
+              tier3to4: {
+                $sum: {
+                  $cond: [
+                    { $and: [{ $gte: ["$orderCount", 3] }, { $lte: ["$orderCount", 4] }] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              tier5plus: { $sum: { $cond: [{ $gte: ["$orderCount", 5] }, 1, 0] } },
+            },
+          },
+        ],
       },
     });
 
     const facetResults = await usersCol.aggregate(pipeline).toArray();
-    const facet = facetResults[0] || { metadata: [], data: [] };
+    const facet = facetResults[0] || { metadata: [], data: [], stats: [] };
     const total = facet.metadata[0]?.total || 0;
     const customers = facet.data || [];
     const totalPages = Math.ceil(total / limit) || 1;
+
+    const statsRaw = facet.stats?.[0] || {
+      totalCustomers: total,
+      repeatCustomers: 0,
+      oneTimeCustomers: 0,
+      totalOrders: 0,
+      totalSpent: 0,
+      repeatSpent: 0,
+      tier1: 0,
+      tier2: 0,
+      tier3to4: 0,
+      tier5plus: 0,
+    };
+
+    const totalCust = statsRaw.totalCustomers || total;
+    const repeatCust = statsRaw.repeatCustomers || 0;
+    const repeatRate = totalCust > 0 ? Number(((repeatCust / totalCust) * 100).toFixed(1)) : 0;
+    const repeatRevenuePercentage =
+      statsRaw.totalSpent > 0
+        ? Number(((statsRaw.repeatSpent / statsRaw.totalSpent) * 100).toFixed(1))
+        : 0;
+
+    const stats = {
+      totalCustomers: totalCust,
+      repeatCustomers: repeatCust,
+      oneTimeCustomers: statsRaw.oneTimeCustomers || 0,
+      repeatRate,
+      totalOrders: statsRaw.totalOrders || 0,
+      totalSpent: statsRaw.totalSpent || 0,
+      repeatSpent: statsRaw.repeatSpent || 0,
+      repeatRevenuePercentage,
+      avgOrdersPerCustomer: totalCust > 0 ? Number((statsRaw.totalOrders / totalCust).toFixed(1)) : 0,
+      frequency: [
+        { label: "1 Order (First-time)", count: statsRaw.tier1 || 0 },
+        { label: "2 Orders (Returning)", count: statsRaw.tier2 || 0 },
+        { label: "3–4 Orders (Regulars)", count: statsRaw.tier3to4 || 0 },
+        { label: "5+ Orders (VIP Fans)", count: statsRaw.tier5plus || 0 },
+      ],
+    };
 
     return c.json({
       success: true,
@@ -118,6 +188,7 @@ adminCustomerRoutes.get("/", async (c) => {
         total,
         totalPages,
       },
+      stats,
     });
   } catch (error: any) {
     console.error("[Admin Customers API Error]:", error);
