@@ -80,11 +80,7 @@ export async function generateOrderInvoicePdf(order: OrderDoc): Promise<Uint8Arr
     bold: true,
   });
   lines.push({
-    left: `Phone: ${order.customer.phone || "—"}`,
-    right: formattedDate,
-  });
-  lines.push({
-    left: `Order #: ${order.orderNumber}`,
+    left: `Date: ${formattedDate}`,
     right: `Time: ${formattedTime}`,
   });
   lines.push({
