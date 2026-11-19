@@ -431,17 +431,26 @@ export const createAddressSchema = z.object({
 
   pincode: z
     .string()
-    .regex(/^\d{6}$/, "Pincode must be a 6-digit postal code")
+    .transform((val) => val.replace(/[\s-]/g, "").trim() || undefined)
+    .pipe(
+      z.string().regex(/^\d{6}$/, "Pincode must be a 6-digit postal code").optional(),
+    )
     .optional(),
 
   latitude: z
     .string()
-    .regex(/^-?\d+(\.\d+)?$/, "Latitude must be a valid decimal number")
+    .transform((val) => val.trim() || undefined)
+    .pipe(
+      z.string().regex(/^-?\d+(\.\d+)?$/, "Latitude must be a valid decimal number").optional(),
+    )
     .optional(),
 
   longitude: z
     .string()
-    .regex(/^-?\d+(\.\d+)?$/, "Longitude must be a valid decimal number")
+    .transform((val) => val.trim() || undefined)
+    .pipe(
+      z.string().regex(/^-?\d+(\.\d+)?$/, "Longitude must be a valid decimal number").optional(),
+    )
     .optional(),
 
   isDefault: z.boolean().optional().default(false),
@@ -481,17 +490,25 @@ export const createOrderSchema = z
     addressId: z.string().optional(),
     address: createAddressSchema.optional(),
     dispatchSlotId: z.string().min(1, "Dispatch slot selection is required"),
-    dispatchDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Dispatch date must be in YYYY-MM-DD format")
-      .optional(),
+    dispatchDate: z.preprocess(
+      (val) => (typeof val === "string" && val.trim() === "" ? undefined : val),
+      z.string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Dispatch date must be in YYYY-MM-DD format")
+        .optional(),
+    ),
     items: z
       .array(orderCartItemSchema)
       .min(1, "Cart must contain at least one item"),
     addons: z.array(orderCartAddonSchema).max(20).optional(),
     notes: z.string().max(500, "Notes cannot exceed 500 characters").optional(),
-    contactEmail: clientEmailSchema.optional(),
-    contactPhone: clientPhoneSchema.optional(),
+    contactEmail: z.preprocess(
+      (val) => (typeof val === "string" && val.trim() === "" ? undefined : val),
+      clientEmailSchema.optional(),
+    ),
+    contactPhone: z.preprocess(
+      (val) => (typeof val === "string" && val.replace(/[\s\-\+\(\)]/g, "") === "" ? undefined : val),
+      clientPhoneSchema.optional(),
+    ),
     customerName: z
       .string()
       .min(2, "Name must be at least 2 characters")
