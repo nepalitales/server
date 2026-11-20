@@ -15,6 +15,9 @@ export interface ConfirmOrderPaymentParams {
     RESEND_API_KEY?: string;
     RESEND_FROM_EMAIL?: string;
     ADMIN_NOTIFICATION_EMAIL?: string;
+    VAPID_PUBLIC_KEY?: string;
+    VAPID_PRIVATE_KEY?: string;
+    VAPID_SUBJECT?: string;
     NODE_ENV?: string;
   };
   waitUntil?: (promise: Promise<any>) => void;
@@ -102,20 +105,24 @@ export async function confirmOrderPaymentAtomic(
       void emailPromise;
     }
 
-    // Broadcast Real-Time SSE/Live Event to Admin Dashboard
-    await recordOrderEvent(db, {
-      type: "order_created",
-      orderId: updatedDoc.id,
-      orderNumber: updatedDoc.orderNumber,
-      status: "placed",
-      summary: {
-        totalAmount: updatedDoc.totalAmount,
-        customerName: updatedDoc.customer.name,
-        customerPhone: updatedDoc.customer.phone,
-        itemsCount: updatedDoc.items.length,
-        source,
+    // Broadcast Real-Time SSE/Live Event to Admin Dashboard and trigger Push Notifications
+    await recordOrderEvent(
+      db,
+      {
+        type: "order_created",
+        orderId: updatedDoc.id,
+        orderNumber: updatedDoc.orderNumber,
+        status: "placed",
+        summary: {
+          totalAmount: updatedDoc.totalAmount,
+          customerName: updatedDoc.customer.name,
+          customerPhone: updatedDoc.customer.phone,
+          itemsCount: updatedDoc.items.length,
+          source,
+        },
       },
-    });
+      params.env,
+    );
 
     return {
       success: true,
