@@ -156,6 +156,8 @@ adminOrderRoutes.get("/", async (c) => {
     if (status && status !== "all") {
       if (status === "out_for_delivery") {
         filter.status = { $in: ["porter_booked", "out_for_delivery"] };
+      } else if (status === "cancelled") {
+        filter.status = { $in: ["cancelled_by_customer", "cancelled_by_admin"] };
       } else if (status === "all_with_pending") {
         // Explicitly include all statuses including pending_payment
       } else {
@@ -194,14 +196,20 @@ adminOrderRoutes.get("/", async (c) => {
     const [
       orders,
       total,
+      allValidCount,
       placedCount,
       preparingCount,
       readyCount,
       outForDeliveryCount,
       deliveredCount,
+      cancelledCount,
     ] = await Promise.all([
       ordersCol.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).toArray(),
       ordersCol.countDocuments(filter),
+      ordersCol.countDocuments({
+        ...baseDateFilter,
+        status: { $nin: ["pending_payment", "expired"] },
+      }),
       ordersCol.countDocuments({ ...baseDateFilter, status: "placed" }),
       ordersCol.countDocuments({ ...baseDateFilter, status: "preparing" }),
       ordersCol.countDocuments({ ...baseDateFilter, status: "ready" }),
@@ -210,6 +218,10 @@ adminOrderRoutes.get("/", async (c) => {
         status: { $in: ["porter_booked", "out_for_delivery"] },
       }),
       ordersCol.countDocuments({ ...baseDateFilter, status: "delivered" }),
+      ordersCol.countDocuments({
+        ...baseDateFilter,
+        status: { $in: ["cancelled_by_customer", "cancelled_by_admin"] },
+      }),
     ]);
 
     return c.json({
@@ -222,12 +234,13 @@ adminOrderRoutes.get("/", async (c) => {
         totalPages: Math.ceil(total / limit),
       },
       counts: {
-        all: total,
+        all: allValidCount,
         placed: placedCount,
         preparing: preparingCount,
         ready: readyCount,
         outForDelivery: outForDeliveryCount,
         delivered: deliveredCount,
+        cancelled: cancelledCount,
       },
     });
   } catch (error) {
