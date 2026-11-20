@@ -53,5 +53,6 @@ export const COLLECTIONS = {
   DISPATCH_SLOT_BUCKETS: "dispatch_slot_buckets",
   ADDONS: "addons",
   ORDER_SETTINGS: "order_settings",
+  ADMIN_PUSH_SUBSCRIPTIONS: "admin_push_subscriptions",
 } as const;
 

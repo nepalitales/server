@@ -36,6 +36,11 @@ export const envSchema = z.object({
   RESEND_FROM_EMAIL: z.string().min(1).optional(),
   ADMIN_NOTIFICATION_EMAIL: z.string().email().optional(),
 
+  // Web Push (PWA Admin Notifications)
+  VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+  VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+  VAPID_SUBJECT: z.string().min(1).optional(),
+
   // Cloud Kitchen Details (for Borzo pickup point 0)
   KITCHEN_ADDRESS: z
     .string()
