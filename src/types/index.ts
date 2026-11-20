@@ -367,20 +367,5 @@ export interface FaqDoc {
   updatedAt: Date;
 }
 
-/** Admin Web Push Subscription stored in MongoDB */
-export interface AdminPushSubscriptionDoc {
-  _id?: ObjectId;
-  endpoint: string;
-  keys: {
-    p256dh: string;
-    auth: string;
-  };
-  adminId?: string;
-  adminEmail?: string;
-  userAgent?: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 
 
